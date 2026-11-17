@@ -1,0 +1,813 @@
+     1→// Renders a single animation frame to a <canvas> by composing an inline SVG
+     2→// that embeds the variable font (base64) and applies `font-variation-settings`.
+     3→// SVG <text> supports variable-font axes through CSS, and keeping the font
+     4→// embedded as a data URI means the canvas never gets tainted, so we can call
+     5→// getImageData() and create VideoFrames from it during recording.
+     6→//
+     7→// The optional overlay draws each variation axis as a single compact row:
+     8→// the axis name sits inline BEFORE the track (so toggling it never changes
+     9→// the stack height), min/max labels flank the track, and an optional
+    10→// Material-style value pill rides ON the thumb (also height-neutral). An
+    11→// optional CSS `font-variation-settings` code line can be appended. The
+    12→// overlay stack is positioned relative to the text block (with a
+    13→// configurable gap), so it follows the text wherever vertical alignment
+    14→// places it. Identical geometry is reused by the DOM live preview so preview
+    15→// and export look the same.
+    16→
+    17→import { applyEasing, type EasingType } from "./easing";
+    18→import type {
+    19→  AxisMoveMode,
+    20→  TextDirection,
+    21→  ThumbShape,
+    22→  VAlign,
+    23→} from "./studio-store-types";
+    24→
+    25→// Characters from RTL scripts (Hebrew, Arabic, Syriac, Thaana, …) — used by
+    26→// the "auto" text-direction rule (first strong character, like dir=auto).
+    27→const RTL_CHAR_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+    28→
+    29→// Resolve the base text direction for rendering. "auto" follows the standard
+    30→// first-strong rule: scan for the first character with a strong direction —
+    31→// an RTL-script letter wins, otherwise the first regular letter means LTR
+    32→// (digits and punctuation are neutral and skipped). Export and preview use
+    33→// the same rule so both always agree.
+    34→export function resolveTextDirection(
+    35→  text: string,
+    36→  setting: TextDirection
+    37→): "ltr" | "rtl" {
+    38→  if (setting !== "auto") return setting;
+    39→  for (const ch of text) {
+    40→    if (RTL_CHAR_RE.test(ch)) return "rtl";
+    41→    if (/\p{L}/u.test(ch)) return "ltr";
+    42→  }
+    43→  return "ltr";
+    44→}
+    45→
+    46→export interface AxisValue {
+    47→  tag: string;
+    48→  value: number;
+    49→}
+    50→
+    51→export interface AxisDisplayInfo {
+    52→  tag: string;
+    53→  name: string;
+    54→  value: number;
+    55→  min: number;
+    56→  max: number;
+    57→}
+    58→
+    59→export interface OverlayConfig {
+    60→  showSliders: boolean; // the slider block itself (track + thumb + panel)
+    61→  showName: boolean;
+    62→  showTag: boolean;
+    63→  showMinMax: boolean; // axis min & max labels at the two ends of the track
+    64→  showLiveValue: boolean; // instantaneous value number riding above the thumb
+    65→  showCss: boolean;
+    66→  valueDecimals: number; // decimal places shown for the live value number
+    67→  centered: boolean; // center the slider stack horizontally
+    68→  nameGap: number; // gap between axis name and slider, in em of overlay font
+    69→  cssGap: number; // gap between slider panel and CSS line, in em
+    70→  textGap: number; // gap between the overlay stack and the text block, in em
+    71→  font: string; // css font-family stack for overlay text
+    72→  color: string; // overlay text/fill color
+    73→  bgColor: string; // panel background color
+    74→  bgOpacity: number; // 0..1 (0 = transparent panel)
+    75→  scale: number; // size multiplier
+    76→  position: "top" | "bottom"; // slider stack relative to the text block
+    77→  thumbScale: number; // thumb size multiplier
+    78→  thumbShape: ThumbShape;
+    79→  axes: AxisDisplayInfo[];
+    80→}
+    81→
+    82→export interface RenderConfig {
+    83→  text: string;
+    84→  fontBase64: string;
+    85→  fontCssFormat: string; // 'truetype' | 'opentype' | 'woff' | 'woff2'
+    86→  fontMime: string; // 'font/ttf' | 'font/otf' | 'font/woff' | 'font/woff2'
+    87→  variation: AxisValue[];
+    88→  fontSize: number;
+    89→  textColor: string;
+    90→  bgColor: string;
+    91→  width: number;
+    92→  height: number;
+    93→  letterSpacing: number;
+    94→  lineHeight: number;
+    95→  align: "left" | "center" | "right";
+    96→  vAlign: VAlign;
+    97→  direction: "ltr" | "rtl"; // resolved base direction of the text block
+    98→  overlay?: OverlayConfig | null;
+    99→}
+   100→
+   101→export function buildVariationString(variation: AxisValue[]): string {
+   102→  if (variation.length === 0) return "normal";
+   103→  return variation
+   104→    .map((a) => `'${a.tag}' ${roundForCss(a.value)}`)
+   105→    .join(", ");
+   106→}
+   107→
+   108→export function buildCssFontVariationSettings(variation: AxisValue[]): string {
+   109→  if (variation.length === 0) return "normal";
+   110→  return variation
+   111→    .map((a) => `"${a.tag}" ${roundForCss(a.value)}`)
+   112→    .join(", ");
+   113→}
+   114→
+   115→function roundForCss(n: number): string {
+   116→  return parseFloat(n.toFixed(2)).toString();
+   117→}
+   118→
+   119→export function fmtNum(n: number): string {
+   120→  return parseFloat(n.toFixed(1)).toString();
+   121→}
+   122→
+   123→// Fixed-decimal formatting for the live value number riding on the thumb.
+   124→export function formatValue(n: number, decimals: number): string {
+   125→  const d = Math.min(4, Math.max(0, Math.round(decimals)));
+   126→  return n.toFixed(d);
+   127→}
+   128→
+   129→export function hexToRgba(hex: string, alpha: number): string {
+   130→  let h = hex.replace("#", "");
+   131→  if (h.length === 3) {
+   132→    h = h
+   133→      .split("")
+   134→      .map((c) => c + c)
+   135→      .join("");
+   136→  }
+   137→  const r = parseInt(h.slice(0, 2), 16) || 0;
+   138→  const g = parseInt(h.slice(2, 4), 16) || 0;
+   139→  const b = parseInt(h.slice(4, 6), 16) || 0;
+   140→  return `rgba(${r},${g},${b},${alpha})`;
+   141→}
+   142→
+   143→// Pick black or white for text drawn on top of a filled shape (the value
+   144→// pill on the thumb) so the number stays readable on any slider color.
+   145→export function contrastFor(hex: string): string {
+   146→  let h = hex.replace("#", "");
+   147→  if (h.length === 3) {
+   148→    h = h
+   149→      .split("")
+   150→      .map((c) => c + c)
+   151→      .join("");
+   152→  }
+   153→  const r = parseInt(h.slice(0, 2), 16) || 0;
+   154→  const g = parseInt(h.slice(2, 4), 16) || 0;
+   155→  const b = parseInt(h.slice(4, 6), 16) || 0;
+   156→  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+   157→  return lum > 0.6 ? "#000000" : "#ffffff";
+   158→}
+   159→
+   160→// Corner radius (px) for the value pill, echoing the chosen thumb shape.
+   161→export function pillRadius(shape: ThumbShape, minDim: number): number {
+   162→  switch (shape) {
+   163→    case "square":
+   164→      return 0;
+   165→    case "rounded":
+   166→      return Math.round(minDim * 0.42);
+   167→    case "diamond":
+   168→      return Math.round(minDim * 0.18);
+   169→    default:
+   170→      return Math.round(minDim / 2); // circle → stadium
+   171→  }
+   172→}
+   173→
+   174→function escapeXml(s: string): string {
+   175→  return s
+   176→    .replace(/&/g, "&amp;")
+   177→    .replace(/</g, "&lt;")
+   178→    .replace(/>/g, "&gt;")
+   179→    .replace(/"/g, "&quot;")
+   180→    .replace(/'/g, "&apos;");
+   181→}
+   182→
+   183→function escapeAttr(s: string): string {
+   184→  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+   185→}
+   186→
+   187→function clamp01(n: number): number {
+   188→  return Math.min(1, Math.max(0, n));
+   189→}
+   190→
+   191→function round2(n: number): string {
+   192→  return (Math.round(n * 100) / 100).toString();
+   193→}
+   194→
+   195→// ─── Text block ────────────────────────────────────────────────────────────
+   196→// Shared estimate of where the text block sits inside the canvas. Used by the
+   197→// SVG frame renderer (for vertical alignment) and by the overlay geometry
+   198→// (for the "distance from text" positioning). Mirrors the 24px side margins.
+   199→
+   200→export interface TextBlock {
+   201→  top: number;
+   202→  bottom: number;
+   203→  height: number;
+   204→}
+   205→
+   206→export function computeTextBlock(
+   207→  height: number,
+   208→  fontSize: number,
+   209→  lineHeight: number,
+   210→  lineCount: number,
+   211→  vAlign: VAlign
+   212→): TextBlock {
+   213→  const h = Math.max(1, lineCount) * fontSize * lineHeight;
+   214→  const margin = 24;
+   215→  if (vAlign === "top") return { top: margin, bottom: margin + h, height: h };
+   216→  if (vAlign === "bottom")
+   217→    return { top: height - margin - h, bottom: height - margin, height: h };
+   218→  const top = (height - h) / 2;
+   219→  return { top, bottom: top + h, height: h };
+   220→}
+   221→
+   222→export interface OverlayMetrics {
+   223→  pad: number;
+   224→  innerPad: number;
+   225→  panelRx: number;
+   226→  fontPx: number;
+   227→  minMaxFont: number;
+   228→  nameW: number; // inline axis-name width (0 when the name is hidden)
+   229→  nameGapPx: number; // horizontal gap: inline name → min label / track
+   230→  textGapPx: number;
+   231→  pillOn: boolean; // value-pill mode (number rides ON the thumb)
+   232→  pillFont: number;
+   233→  pillPadX: number;
+   234→  pillPadY: number;
+   235→  pillW: number;
+   236→  pillH: number;
+   237→  pillTextFill: string; // auto-contrast color for the number inside the pill
+   238→  trackRowH: number;
+   239→  trackH: number;
+   240→  thumbR: number;
+   241→  thumbD: number;
+   242→  trackW: number;
+   243→  flankGap: number;
+   244→  minMaxLabelW: number;
+   245→  blockW: number; // content width of one axis block (panel inner width)
+   246→  pillBuffer: number; // extra horizontal room (px) so the value pill can overhang the track ends without leaving the panel
+   247→  panelW: number;
+   248→  panelH: number;
+   249→  panelX: number;
+   250→  panelY: number;
+   251→  axisGap: number;
+   252→  trackLeft: number; // track x inside the block content (after name + min)
+   253→  cssOn: boolean;
+   254→  cssFontPx: number;
+   255→  cssBarX: number;
+   256→  cssBarY: number;
+   257→  cssBarW: number;
+   258→  cssBarH: number;
+   259→  cssGapPx: number;
+   260→  stackH: number; // total height of the overlay stack (panel + css line)
+   261→}
+   262→
+   263→function cssCodeText(o: OverlayConfig): string {
+   264→  return `font-variation-settings: ${buildCssFontVariationSettings(
+   265→    o.axes.map((a) => ({ tag: a.tag, value: a.value }))
+   266→  )};`;
+   267→}
+   268→
+   269→// The widest the CSS code string can get for the current axes. The rendered
+   270→// value strings vary in length from frame to frame — measuring against the
+   271→// widest variant keeps the CSS line's font size and bar geometry CONSTANT
+   272→// across frames (otherwise the bar visibly pulses while the animation runs).
+   273→function cssCodeWidestText(o: OverlayConfig): string {
+   274→  const dec = o.valueDecimals;
+   275→  const parts = o.axes.map((a) => {
+   276→    const widest = [a.min, a.max]
+   277→      .map((v) => formatValue(v, dec))
+   278→      .reduce((p, c) => (c.length > p.length ? c : p), "");
+   279→    return `"${a.tag}" ${widest}`;
+   280→  });
+   281→  return `font-variation-settings: ${parts.join(", ")};`;
+   282→}
+   283→
+   284→function minMaxChars(o: OverlayConfig): number {
+   285→  let chars = 0;
+   286→  for (const a of o.axes) {
+   287→    const len = Math.max(fmtNum(a.min).length, fmtNum(a.max).length);
+   288→    if (len > chars) chars = len;
+   289→  }
+   290→  return Math.max(chars, 3);
+   291→}
+   292→
+   293→// Shared geometry for the overlay — used by both the SVG frame renderer and
+   294→// the DOM live preview so both look identical. All values are in canvas px.
+   295→export function computeOverlayMetrics(
+   296→  width: number,
+   297→  height: number,
+   298→  o: OverlayConfig,
+   299→  textBlock: TextBlock
+   300→): OverlayMetrics {
+   301→  const s = o.scale;
+   302→  // The slider block only exists when the "slider" toggle is on; the name,
+   303→  // min–max labels and the value pill are decorations that live inside it.
+   304→  const slidersOn = o.showSliders && o.axes.length > 0;
+   305→  const fontPx = Math.max(9, Math.round(width * 0.016 * s));
+   306→  const pad = Math.max(8, Math.round(width * 0.014 * s));
+   307→  const innerPad = Math.max(6, Math.round(pad * 0.85));
+   308→  const panelRx = Math.max(6, Math.round(innerPad * 0.9));
+   309→  const trackH = Math.max(3, Math.round(fontPx * 0.3));
+   310→  const thumbR = Math.max(
+   311→    3,
+   312→    Math.round(fontPx * 0.48 * Math.min(3, Math.max(0.4, o.thumbScale)))
+   313→  );
+   314→  const thumbD = thumbR * 2;
+   315→  const minMaxFont = Math.max(8, Math.round(fontPx * 0.78));
+   316→
+   317→  // Inline axis name — drawn BEFORE the track on the same row, so toggling
+   318→  // the name never changes the height of the slider stack.
+   319→  const hasName = slidersOn && (o.showName || o.showTag) && o.axes.length > 0;
+   320→  let nameChars = 0;
+   321→  if (hasName) {
+   322→    for (const a of o.axes) {
+   323→      let len = 0;
+   324→      if (o.showName) len += a.name.length;
+   325→      if (o.showTag) len += a.tag.length + 2;
+   326→      if (len > nameChars) nameChars = len;
+   327→    }
+   328→  }
+   329→  const nameW = hasName ? Math.ceil(nameChars * 0.62 * fontPx) : 0;
+   330→  // Horizontal gap between the inline name and the min label / track.
+   331→  const nameGapPx = Math.round(
+   332→    Math.min(Math.max(o.nameGap, 0), 4) * fontPx
+   333→  );
+   334→  const textGapPx = Math.round(
+   335→    Math.min(Math.max(o.textGap, 0), 6) * fontPx
+   336→  );
+   337→
+   338→  // Value pill riding ON the thumb (Material-style label). It replaces the
+   339→  // thumb and adds NO extra row, so the stack height stays identical whether
+   340→  // the value number is on or off. Width uses the widest value string the
+   341→  // axis can ever show (min/max at the chosen decimals) so the pill geometry
+   342→  // is frame-stable — no pulsing mid-animation.
+   343→  const pillOn = slidersOn && o.showLiveValue;
+   344→  const pillFont = Math.max(8, Math.round(fontPx * 0.8));
+   345→  const pillPadX = Math.max(6, Math.round(pillFont * 0.55));
+   346→  const pillPadY = Math.max(3, Math.round(pillFont * 0.3));
+   347→  let valueChars = 3;
+   348→  for (const a of o.axes) {
+   349→    const len = Math.max(
+   350→      formatValue(a.min, o.valueDecimals).length,
+   351→      formatValue(a.max, o.valueDecimals).length
+   352→    );
+   353→    if (len > valueChars) valueChars = len;
+   354→  }
+   355→  const pillTextW = Math.ceil(valueChars * 0.62 * pillFont);
+   356→  const pillH = Math.max(thumbD, Math.round(pillFont * 1.5) + pillPadY * 2);
+   357→  const pillW = Math.max(
+   358→    thumbD + Math.round(thumbD * 0.4),
+   359→    pillTextW + pillPadX * 2
+   360→  );
+   361→  const pillTextFill = contrastFor(o.color);
+   362→  // The value pill rides ON the thumb and its centre follows the value across
+   363→  // the FULL track (no end-clamping), so it overhangs the track ends by up to
+   364→  // half its width. Reserve that much room on both ends of the row so the
+   365→  // pill always stays inside the panel while the thumb keeps moving.
+   366→  const pillBuffer = pillOn ? Math.ceil(pillW / 2) : 0;
+   367→
+   368→  const minMaxLabelW =
+   369→    slidersOn && o.showMinMax
+   370→      ? Math.ceil(minMaxChars(o) * 0.62 * minMaxFont)
+   371→      : 0;
+   372→  const flankGap = Math.max(4, Math.round(fontPx * 0.5));
+   373→  const trackRowH = Math.max(
+   374→    Math.round(thumbD * 1.25),
+   375→    Math.round(minMaxFont * 1.35)
+   376→  );
+   377→
+   378→  const nameSpan = nameW + (hasName ? nameGapPx : 0);
+   379→  const trackFlank = minMaxLabelW > 0 ? minMaxLabelW * 2 + flankGap * 2 : 0;
+   380→  const availForTrack =
+   381→    width - pad * 2 - innerPad * 2 - nameSpan - trackFlank - pillBuffer * 2;
+   382→  const trackW = Math.max(
+   383→    fontPx * 6,
+   384→    Math.min(
+   385→      Math.round(width * 0.3 * s),
+   386→      Math.max(availForTrack, fontPx * 6)
+   387→    )
+   388→  );
+   389→
+   390→  const trackRowW = pillBuffer * 2 + nameSpan + trackFlank + trackW;
+   391→  const maxBlock = Math.max(fontPx * 6, width - pad * 2 - innerPad * 2);
+   392→  const blockW = Math.min(maxBlock, trackRowW);
+   393→  const panelW = blockW + innerPad * 2;
+   394→
+   395→  const axisGap = Math.round(fontPx * 1.2);
+   396→  const rowStack = trackRowH; // one compact row per axis
+   397→  const n = o.axes.length;
+   398→  const panelH =
+   399→    slidersOn && n > 0 ? innerPad * 2 + rowStack * n + axisGap * (n - 1) : 0;
+   400→
+   401→  // CSS code line — auto-shrink font if the string is longer than the bar.
+   402→  // The width estimate uses the widest possible value strings so the font
+   403→  // size (and therefore the bar geometry) stays constant across frames.
+   404→  const cssText = cssCodeText(o);
+   405→  const cssWidest = cssCodeWidestText(o);
+   406→  const availCss = Math.max(40, width - pad * 2 - innerPad * 2);
+   407→  const cssEst = 0.62 * fontPx * Math.max(1, cssWidest.length);
+   408→  const cssFontPx =
+   409→    cssEst > availCss
+   410→      ? Math.max(
+   411→          8,
+   412→          Math.floor(availCss / (0.62 * Math.max(1, cssWidest.length)))
+   413→        )
+   414→      : fontPx;
+   415→  const cssTextW = Math.ceil(cssWidest.length * 0.62 * cssFontPx);
+   416→  const cssBarH = o.showCss ? Math.round(cssFontPx * 1.5 + innerPad * 1.1) : 0;
+   417→  const cssGapPx = Math.round(
+   418→    Math.min(Math.max(o.cssGap, 0), 4) * fontPx
+   419→  );
+   420→  const cssOn = o.showCss && cssBarH > 0;
+   421→  const cssBarW = cssOn
+   422→    ? Math.min(
+   423→        width - pad * 2,
+   424→        o.centered ? cssTextW + innerPad * 2 : width - pad * 2
+   425→      )
+   426→    : 0;
+   427→
+   428→  // ── Vertical placement ────────────────────────────────────────────────
+   429→  // The whole stack (slider panel + CSS line) hugs the text block with
+   430→  // textGapPx between them, clamped so it never leaves the canvas.
+   431→  const stackH = panelH + (slidersOn && cssOn ? cssGapPx + cssBarH : cssOn ? cssBarH : 0);
+   432→  const minTop = pad;
+   433→  const maxTop = Math.max(minTop, height - pad - stackH);
+   434→  let panelY = 0;
+   435→  if (o.position === "top") {
+   436→    panelY = Math.round(
+   437→      Math.min(maxTop, Math.max(minTop, textBlock.top - textGapPx - stackH))
+   438→    );
+   439→  } else {
+   440→    panelY = Math.round(
+   441→      Math.min(maxTop, Math.max(minTop, textBlock.bottom + textGapPx))
+   442→    );
+   443→  }
+   444→  const cssBarY = cssOn
+   445→    ? Math.round(
+   446→        Math.min(
+   447→          height - pad - cssBarH,
+   448→          Math.max(
+   449→            pad,
+   450→            slidersOn ? panelY + panelH + cssGapPx : panelY
+   451→          )
+   452→        )
+   453→      )
+   454→    : 0;
+   455→
+   456→  const panelX = o.centered
+   457→    ? Math.max(pad, Math.round((width - panelW) / 2))
+   458→    : pad;
+   459→  const cssBarX = cssOn
+   460→    ? o.centered
+   461→      ? Math.max(pad, Math.round((width - cssBarW) / 2))
+   462→      : pad
+   463→    : 0;
+   464→
+   465→  const trackLeft =
+   466→    pillBuffer + nameSpan + (minMaxLabelW > 0 ? minMaxLabelW + flankGap : 0);
+   467→
+   468→  return {
+   469→    pad,
+   470→    innerPad,
+   471→    panelRx,
+   472→    fontPx,
+   473→    minMaxFont,
+   474→    nameW,
+   475→    nameGapPx,
+   476→    textGapPx,
+   477→    pillOn,
+   478→    pillFont,
+   479→    pillPadX,
+   480→    pillPadY,
+   481→    pillW,
+   482→    pillH,
+   483→    pillTextFill,
+   484→    trackRowH,
+   485→    trackH,
+   486→    thumbR,
+   487→    thumbD,
+   488→    trackW,
+   489→    flankGap,
+   490→    minMaxLabelW,
+   491→    blockW,
+   492→    pillBuffer,
+   493→    panelW,
+   494→    panelH,
+   495→    panelX,
+   496→    panelY,
+   497→    axisGap,
+   498→    trackLeft,
+   499→    cssOn,
+   500→    cssFontPx,
+   501→    cssBarX,
+   502→    cssBarY,
+   503→    cssBarW,
+   504→    cssBarH,
+   505→    cssGapPx,
+   506→    stackH,
+   507→  };
+   508→}
+   509→
+   510→// Thumb marker in every supported shape, drawn centered on (cx, cy).
+   511→function thumbSvg(
+   512→  shape: ThumbShape,
+   513→  cx: number,
+   514→  cy: number,
+   515→  r: number,
+   516→  fill: string
+   517→): string {
+   518→  const d = r * 2;
+   519→  const x = round2(cx - r);
+   520→  const y = round2(cy - r);
+   521→  switch (shape) {
+   522→    case "square":
+   523→      return `<rect x="${x}" y="${y}" width="${d}" height="${d}" fill="${fill}"/>`;
+   524→    case "rounded":
+   525→      return `<rect x="${x}" y="${y}" width="${d}" height="${d}" rx="${round2(r * 0.42)}" fill="${fill}"/>`;
+   526→    case "diamond":
+   527→      return `<rect x="${x}" y="${y}" width="${d}" height="${d}" rx="${round2(r * 0.18)}" fill="${fill}" transform="rotate(45 ${round2(cx)} ${round2(cy)})"/>`;
+   528→    default:
+   529→      return `<circle cx="${round2(cx)}" cy="${round2(cy)}" r="${r}" fill="${fill}"/>`;
+   530→  }
+   531→}
+   532→
+   533→function buildOverlaySvg(
+   534→  o: OverlayConfig,
+   535→  width: number,
+   536→  height: number,
+   537→  textBlock: TextBlock
+   538→): string {
+   539→  const m = computeOverlayMetrics(width, height, o, textBlock);
+   540→  const parts: string[] = [];
+   541→  const fontAttr = `font-family="${escapeAttr(o.font)}"`;
+   542→  const fill = escapeAttr(o.color);
+   543→  if (o.showSliders && m.panelH > 0) {
+   544→    if (o.bgOpacity > 0) {
+   545→      parts.push(
+   546→        `<rect x="${m.panelX}" y="${m.panelY}" width="${m.panelW}" height="${m.panelH}" rx="${m.panelRx}" fill="${escapeAttr(o.bgColor)}" fill-opacity="${round2(o.bgOpacity)}"/>`
+   547→      );
+   548→    }
+   549→    const contentX = m.panelX + m.innerPad;
+   550→
+   551→    o.axes.forEach((a, i) => {
+   552→      const y = m.panelY + m.innerPad + i * (m.trackRowH + m.axisGap);
+   553→      const cy = y + m.trackRowH / 2;
+   554→      const t = clamp01((a.value - a.min) / (a.max - a.min || 1));
+   555→      const trackX = contentX + m.trackLeft;
+   556→      const fillW = t * m.trackW;
+   557→      const thumbCx = trackX + fillW;
+   558→
+   559→      // Inline axis name, BEFORE the track (same row → constant stack height).
+   560→      // Right-aligned inside its fixed-width slot, so every name ends at the
+   561→      // SAME distance from the start of its own track.
+   562→      if (m.nameW > 0) {
+   563→        const label = [
+   564→          o.showName ? escapeXml(a.name) : "",
+   565→          o.showTag ? `(${escapeXml(a.tag)})` : "",
+   566→        ]
+   567→          .filter(Boolean)
+   568→          .join(" ");
+   569→        parts.push(
+   570→          `<text x="${round2(contentX + m.pillBuffer + m.nameW)}" y="${round2(cy + m.fontPx * 0.35)}" text-anchor="end" fill="${fill}" ${fontAttr} font-size="${m.fontPx}">${label}</text>`
+   571→        );
+   572→      }
+   573→
+   574→      // Min–max labels flanking the track.
+   575→      if (m.minMaxLabelW > 0) {
+   576→        const lb = cy + m.minMaxFont * 0.35;
+   577→        parts.push(
+   578→          `<text x="${round2(trackX - m.flankGap)}" y="${round2(lb)}" text-anchor="end" fill="${fill}" fill-opacity="0.75" ${fontAttr} font-size="${m.minMaxFont}">${fmtNum(a.min)}</text>`
+   579→        );
+   580→        parts.push(
+   581→          `<text x="${round2(trackX + m.trackW + m.flankGap)}" y="${round2(lb)}" text-anchor="start" fill="${fill}" fill-opacity="0.75" ${fontAttr} font-size="${m.minMaxFont}">${fmtNum(a.max)}</text>`
+   582→        );
+   583→      }
+   584→
+   585→      parts.push(
+   586→        `<rect x="${trackX}" y="${round2(cy - m.trackH / 2)}" width="${m.trackW}" height="${m.trackH}" rx="${m.trackH / 2}" fill="${fill}" fill-opacity="0.22"/>`
+   587→      );
+   588→      if (fillW > 0) {
+   589→        parts.push(
+   590→          `<rect x="${trackX}" y="${round2(cy - m.trackH / 2)}" width="${round2(fillW)}" height="${m.trackH}" rx="${m.trackH / 2}" fill="${fill}" fill-opacity="0.7"/>`
+   591→        );
+   592→      }
+   593→
+   594→      // Value pill riding ON the thumb (replaces it). The pill centre follows
+   595→      // the value across the FULL track — no end-clamping — so the thumb is
+   596→      // always moving whenever the number changes. It may overhang the track
+   597→      // ends; the row's pillBuffer reserves room for that inside the panel.
+   598→      // The centre is snapped to whole canvas pixels so it rasterises
+   599→      // identically frame-to-frame instead of shimmering sub-pixel.
+   600→      if (m.pillOn) {
+   601→        const pcx = Math.round(thumbCx);
+   602→        const prx = pillRadius(o.thumbShape, Math.min(m.pillW, m.pillH));
+   603→        parts.push(
+   604→          `<rect x="${round2(pcx - m.pillW / 2)}" y="${round2(cy - m.pillH / 2)}" width="${round2(m.pillW)}" height="${round2(m.pillH)}" rx="${round2(prx)}" fill="${fill}"/>`
+   605→        );
+   606→        parts.push(
+   607→          `<text x="${pcx}" y="${round2(cy + m.pillFont * 0.35)}" text-anchor="middle" fill="${m.pillTextFill}" ${fontAttr} font-size="${m.pillFont}">${formatValue(a.value, o.valueDecimals)}</text>`
+   608→        );
+   609→      } else {
+   610→        parts.push(thumbSvg(o.thumbShape, thumbCx, cy, m.thumbR, fill));
+   611→      }
+   612→    });
+   613→  }
+   614→
+   615→  if (m.cssOn) {
+   616→    const cssText = cssCodeText(o);
+   617→    if (o.bgOpacity > 0) {
+   618→      parts.push(
+   619→        `<rect x="${m.cssBarX}" y="${m.cssBarY}" width="${m.cssBarW}" height="${m.cssBarH}" rx="${m.panelRx}" fill="${escapeAttr(o.bgColor)}" fill-opacity="${round2(o.bgOpacity)}"/>`
+   620→      );
+   621→    }
+   622→    const anchor = o.centered ? "middle" : "start";
+   623→    const tx = o.centered
+   624→      ? m.cssBarX + m.cssBarW / 2
+   625→      : m.cssBarX + m.innerPad;
+   626→    parts.push(
+   627→      `<text x="${round2(tx)}" y="${round2(m.cssBarY + m.cssBarH / 2 + m.cssFontPx * 0.36)}" text-anchor="${anchor}" fill="${fill}" ${fontAttr} font-size="${m.cssFontPx}" xml:space="preserve">${escapeXml(cssText)}</text>`
+   628→    );
+   629→  }
+   630→
+   631→  return parts.join("");
+   632→}
+   633→
+   634→export function buildSvgString(cfg: RenderConfig): string {
+   635→  const {
+   636→    text,
+   637→    fontBase64,
+   638→    fontCssFormat,
+   639→    fontMime,
+   640→    variation,
+   641→    fontSize,
+   642→    textColor,
+   643→    bgColor,
+   644→    width,
+   645→    height,
+   646→    letterSpacing,
+   647→    lineHeight,
+   648→    align,
+   649→    vAlign,
+   650→    direction,
+   651→    overlay,
+   652→  } = cfg;
+   653→
+   654→  const lines = text.length ? text.split("\n") : [" "];
+   655→  const textBlock = computeTextBlock(
+   656→    height,
+   657→    fontSize,
+   658→    lineHeight,
+   659→    lines.length,
+   660→    vAlign
+   661→  );
+   662→  const top = textBlock.top;
+   663→  // Horizontal alignment is PHYSICAL (left/center/right stay where they are
+   664→  // on screen regardless of text direction). SVG text-anchor is LOGICAL —
+   665→  // with an RTL base direction start/end swap sides — so map the physical
+   666→  // alignment onto the matching logical anchor. anchorX stays physical.
+   667→  const anchorX =
+   668→    align === "center" ? width / 2 : align === "right" ? width - 24 : 24;
+   669→  const physAnchor =
+   670→    align === "center" ? "middle" : align === "right" ? "end" : "start";
+   671→  const anchor =
+   672→    direction === "rtl" && physAnchor === "start"
+   673→      ? "end"
+   674→      : direction === "rtl" && physAnchor === "end"
+   675→        ? "start"
+   676→        : physAnchor;
+   677→  // Establish the RTL base direction on the text element. Per SVG 1.1 the
+   678→  // direction property needs unicode-bidi to open an embedding. LTR needs no
+   679→  // style — it is the SVG default.
+   680→  const dirStyle =
+   681→    direction === "rtl"
+   682→      ? " direction: rtl; unicode-bidi: embed;"
+   683→      : "";
+   684→
+   685→  const tspans = lines
+   686→    .map((line, i) => {
+   687→      const y = top + i * fontSize * lineHeight + fontSize * 0.78;
+   688→      return `<tspan x="${anchorX}" y="${round2(y)}">${escapeXml(line) || "&#8203;"}</tspan>`;
+   689→    })
+   690→    .join("");
+   691→
+   692→  const variationCss = buildVariationString(variation);
+   693→  const letterSpacingCss =
+   694→    letterSpacing !== 0 ? `letter-spacing: ${letterSpacing}px;` : "";
+   695→
+   696→  const overlaySvg =
+   697→    overlay &&
+   698→    ((overlay.showSliders && overlay.axes.length > 0) || overlay.showCss)
+   699→      ? buildOverlaySvg(overlay, width, height, textBlock)
+   700→      : "";
+   701→
+   702→  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+   703→<defs>
+   704→<style>
+   705→@font-face { font-family: 'VFStudio'; src: url(data:${escapeAttr(fontMime)};base64,${fontBase64}) format('${escapeAttr(fontCssFormat)}'); }
+   706→.vftxt { font-family: 'VFStudio', system-ui, sans-serif; font-size: ${fontSize}px; fill: ${escapeAttr(textColor)}; font-variation-settings: ${variationCss}; ${letterSpacingCss} }
+   707→</style>
+   708→</defs>
+   709→<rect x="0" y="0" width="${width}" height="${height}" fill="${escapeAttr(bgColor)}"/>
+   710→<text class="vftxt" text-anchor="${anchor}"${dirStyle ? ` style="${dirStyle}"` : ""}>${tspans}</text>
+   711→${overlaySvg}</svg>`;
+   712→}
+   713→
+   714→// Loads an SVG string into an Image element and resolves only when the
+   715→// image is fully decoded. `decode()` waits for the SVG document's internal
+   716→// work (including font handling) to finish, which removes any chance of a
+   717→// half-rasterised frame (e.g. text missing on a few frames) being drawn.
+   718→async function loadSvgImage(
+   719→  svg: string,
+   720→  width: number,
+   721→  height: number
+   722→): Promise<HTMLImageElement> {
+   723→  const img = new Image(width, height);
+   724→  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+   725→  await new Promise<void>((resolve, reject) => {
+   726→    img.onload = () => resolve();
+   727→    img.onerror = () => reject(new Error("Failed to render SVG frame."));
+   728→  });
+   729→  if (typeof img.decode === "function") {
+   730→    try {
+   731→      await img.decode();
+   732→    } catch {
+   733→      // Already loaded via onload — safe to continue with what we have.
+   734→    }
+   735→  }
+   736→  return img;
+   737→}
+   738→
+   739→export async function renderFrameToCanvas(
+   740→  canvas: HTMLCanvasElement,
+   741→  cfg: RenderConfig
+   742→): Promise<void> {
+   743→  const svg = buildSvgString(cfg);
+   744→  const img = await loadSvgImage(svg, cfg.width, cfg.height);
+   745→  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+   746→  if (!ctx) throw new Error("Canvas 2D context unavailable.");
+   747→  ctx.clearRect(0, 0, cfg.width, cfg.height);
+   748→  ctx.drawImage(img, 0, 0, cfg.width, cfg.height);
+   749→}
+   750→
+   751→// Compute the axis values for a normalised progress (0..1).
+   752→//
+   753→// mode = "sync": every animated axis shares one timeline — its value eases
+   754→// from animFrom to animTo as progress runs 0→1.
+   755→//
+   756→// mode = "binary": the animated axes count through a binary sequence. Each
+   757→// animated axis is one bit, ordered from the LEAST significant (the topmost
+   758→// animated axis) to the most significant (the bottom one). N animated axes
+   759→// cycle through 2^N states (e.g. 2 axes: 00 → 01 → 10 → 11 → 00). The whole
+   760→// timeline divides into 2^N equal segments; during segment k every axis eases
+   761→// from its value in state k to its value in state k+1 (the last segment wraps
+   762→// back to state 0, so the cycle always closes seamlessly at progress = 1).
+   763→// Bit 0 → animFrom, bit 1 → animTo of that axis. Pure function of progress,
+   764→// so preview and frame-by-frame export stay perfectly deterministic.
+   765→export function computeAxisValues(
+   766→  axes: {
+   767→    tag: string;
+   768→    min: number;
+   769→    max: number;
+   770→    animFrom: number;
+   771→    animTo: number;
+   772→    animate: boolean;
+   773→    current: number;
+   774→  }[],
+   775→  progress: number,
+   776→  easing: EasingType,
+   777→  mode: AxisMoveMode
+   778→): AxisValue[] {
+   779→  // Bit order: animated axes in display order (top → bottom); the topmost
+   780→  // animated axis is the least significant bit.
+   781→  const animIdx: number[] = [];
+   782→  axes.forEach((a, i) => {
+   783→    if (a.animate) animIdx.push(i);
+   784→  });
+   785→  const n = animIdx.length;
+   786→  const states = n > 0 ? 1 << n : 1;
+   787→  const p = clamp01(progress);
+   788→
+   789→  return axes.map((a, i) => {
+   790→    if (!a.animate) return { tag: a.tag, value: a.current };
+   791→    let value: number;
+   792→    if (mode === "binary" && n > 0) {
+   793→      const bit = animIdx.indexOf(i);
+   794→      const at = (s: number) => ((s >> bit) & 1 ? a.animTo : a.animFrom);
+   795→      const total = p * states;
+   796→      const seg = Math.min(states - 1, Math.floor(total));
+   797→      const local = clamp01(total - seg);
+   798→      const eased = applyEasing(local, easing);
+   799→      const from = at(seg);
+   800→      const to = at((seg + 1) % states);
+   801→      value = from + (to - from) * eased;
+   802→    } else {
+   803→      const eased = applyEasing(p, easing);
+   804→      value = a.animFrom + (a.animTo - a.animFrom) * eased;
+   805→    }
+   806→    return { tag: a.tag, value: clamp(value, a.min, a.max) };
+   807→  });
+   808→}
+   809→
+   810→export function clamp(n: number, min: number, max: number): number {
+   811→  return Math.min(max, Math.max(min, n));
+   812→}
+   813→
