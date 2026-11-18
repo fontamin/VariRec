@@ -58,6 +58,7 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
+import { CanvasSizeInput } from "./canvas-size-input";
 
 const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
   { label: "16:9", w: 960, h: 540 },
@@ -308,37 +309,9 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
         </Tool>
 
         <Tool icon={Maximize2} title="Canvas size" contentClassName="w-72">
-          <div className="flex items-center gap-1.5">
-            <Input
-              type="number"
-              min={64}
-              max={2560}
-              step={2}
-              value={canvasWidth}
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                if (!isNaN(v))
-                  setCanvasSize(Math.min(2560, Math.max(64, v)), canvasHeight);
-              }}
-              className="h-7 flex-1 px-1.5 text-xs"
-              aria-label="Canvas width"
-            />
-            <span className="text-[11px] text-muted-foreground">×</span>
-            <Input
-              type="number"
-              min={64}
-              max={2560}
-              step={2}
-              value={canvasHeight}
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                if (!isNaN(v))
-                  setCanvasSize(canvasWidth, Math.min(2560, Math.max(64, v)));
-              }}
-              className="h-7 flex-1 px-1.5 text-xs"
-              aria-label="Canvas height"
-            />
-          </div>
+          {/* Typed sizes commit only on "Apply size" (or Enter) — see
+              CanvasSizeInput. Preset chips below stay one-click instant. */}
+          <CanvasSizeInput />
           <div className="flex flex-wrap gap-1">
             {CANVAS_PRESETS.map((p) => {
               const active = p.w === canvasWidth && p.h === canvasHeight;

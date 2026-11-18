@@ -20,6 +20,7 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
+import { CanvasSizeInput } from "./canvas-size-input";
 
 const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
   { label: "16:9", w: 960, h: 540 },
@@ -204,45 +205,9 @@ export function TypographyPanel() {
                 );
               })}
             </div>
-            <div className="flex items-center gap-1.5 pt-0.5">
-              <Input
-                type="number"
-                min={64}
-                max={2560}
-                step={2}
-                value={canvasWidth}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v)) {
-                    setCanvasSize(
-                      Math.min(2560, Math.max(64, v)),
-                      canvasHeight
-                    );
-                  }
-                }}
-                className="h-6 flex-1 px-1.5 text-[11px]"
-                aria-label="Canvas width"
-              />
-              <span className="text-[11px] text-muted-foreground">×</span>
-              <Input
-                type="number"
-                min={64}
-                max={2560}
-                step={2}
-                value={canvasHeight}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v)) {
-                    setCanvasSize(
-                      canvasWidth,
-                      Math.min(2560, Math.max(64, v))
-                    );
-                  }
-                }}
-                className="h-6 flex-1 px-1.5 text-[11px]"
-                aria-label="Canvas height"
-              />
-            </div>
+            {/* Typed sizes commit only on "Apply size" (or Enter) — see
+                CanvasSizeInput. Preset chips above stay one-click instant. */}
+            <CanvasSizeInput compact />
           </div>
         </div>
       </CardContent>
