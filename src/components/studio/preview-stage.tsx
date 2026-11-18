@@ -58,6 +58,9 @@ function overlayCfgFrom(s: StudioState): OverlayConfig {
     thumbScale: s.overlayThumbScale,
     thumbShape: s.overlayThumbShape,
     font: s.overlayFont,
+    bold: s.overlayBold,
+    fontScale: s.overlayFontScale,
+    trackLenPct: s.overlayTrackLen,
     color: s.overlayColor,
     bgColor: s.overlayBgColor,
     bgOpacity: s.overlayBgOpacity,
@@ -132,6 +135,11 @@ export function PreviewStage() {
   const overlayShowCss = useStudio((s) => s.overlayShowCss);
   const overlayCentered = useStudio((s) => s.overlayCentered);
   const overlayFont = useStudio((s) => s.overlayFont);
+  const overlayBold = useStudio((s) => s.overlayBold);
+  const overlayFontScale = useStudio((s) => s.overlayFontScale);
+  const overlayTrackLen = useStudio((s) => s.overlayTrackLen);
+  const overlayNameGap = useStudio((s) => s.overlayNameGap);
+  const overlayCssGap = useStudio((s) => s.overlayCssGap);
   const overlayColor = useStudio((s) => s.overlayColor);
   const overlayBgColor = useStudio((s) => s.overlayBgColor);
   const overlayBgOpacity = useStudio((s) => s.overlayBgOpacity);
@@ -437,6 +445,7 @@ export function PreviewStage() {
                 decimals={overlayValueDecimals}
                 color={overlayColor}
                 font={overlayFont}
+                bold={overlayBold}
                 shape={overlayThumbShape}
                 m={m}
                 k={k}
@@ -460,6 +469,7 @@ export function PreviewStage() {
               borderRadius: m.panelRx * k,
               background: panelBg,
               fontFamily: overlayFont,
+              fontWeight: overlayBold ? 700 : 400,
               color: overlayColor,
               fontSize: m.cssFontPx * k,
               lineHeight: `${m.cssBarH * k}px`,
@@ -511,6 +521,7 @@ function AxisSliderRow({
   decimals,
   color,
   font,
+  bold,
   shape,
   m,
   k,
@@ -529,6 +540,7 @@ function AxisSliderRow({
   decimals: number;
   color: string;
   font: string;
+  bold: boolean;
   shape: ThumbShape;
   m: OverlayMetrics;
   k: number;
@@ -601,6 +613,7 @@ function AxisSliderRow({
               fontSize: m.fontPx * k,
               color,
               fontFamily: font,
+              fontWeight: bold ? 700 : 400,
               lineHeight: 1,
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -624,6 +637,7 @@ function AxisSliderRow({
               color,
               opacity: 0.75,
               fontFamily: font,
+              fontWeight: bold ? 700 : 400,
               textAlign: "right",
               lineHeight: 1,
               whiteSpace: "nowrap",
@@ -694,6 +708,7 @@ function AxisSliderRow({
                   lineHeight: 1,
                   color: m.pillTextFill,
                   fontFamily: font,
+                  fontWeight: bold ? 700 : 400,
                   whiteSpace: "nowrap",
                 }}
               >
@@ -711,6 +726,7 @@ function AxisSliderRow({
               color,
               opacity: 0.75,
               fontFamily: font,
+              fontWeight: bold ? 700 : 400,
               textAlign: "left",
               lineHeight: 1,
               whiteSpace: "nowrap",

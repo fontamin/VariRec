@@ -85,6 +85,9 @@ export interface StudioState {
   overlayThumbScale: number; // thumb size multiplier
   overlayThumbShape: ThumbShape;
   overlayFont: string;
+  overlayFontScale: number; // overlay TEXT size multiplier (1 = default)
+  overlayBold: boolean; // draw overlay text bold
+  overlayTrackLen: number; // slider track length as % of canvas width (20..100)
   overlayColor: string;
   overlayBgColor: string;
   overlayBgOpacity: number;
@@ -136,6 +139,9 @@ export interface StudioState {
   setOverlayThumbScale: (n: number) => void;
   setOverlayThumbShape: (s: ThumbShape) => void;
   setOverlayFont: (f: string) => void;
+  setOverlayFontScale: (n: number) => void;
+  setOverlayBold: (b: boolean) => void;
+  setOverlayTrackLen: (n: number) => void;
   setOverlayColor: (c: string) => void;
   setOverlayBgColor: (c: string) => void;
   setOverlayBgOpacity: (n: number) => void;
@@ -224,6 +230,9 @@ export const useStudio = create<StudioState>((set, get) => ({
   overlayThumbScale: 1,
   overlayThumbShape: "circle",
   overlayFont: DEFAULT_OVERLAY_FONT,
+  overlayFontScale: 1,
+  overlayBold: false,
+  overlayTrackLen: 30,
   overlayColor: "#000000",
   overlayBgColor: "#ffffff",
   overlayBgOpacity: 0,
@@ -309,6 +318,9 @@ export const useStudio = create<StudioState>((set, get) => ({
   setOverlayThumbScale: (overlayThumbScale) => set({ overlayThumbScale }),
   setOverlayThumbShape: (overlayThumbShape) => set({ overlayThumbShape }),
   setOverlayFont: (overlayFont) => set({ overlayFont }),
+  setOverlayFontScale: (overlayFontScale) => set({ overlayFontScale }),
+  setOverlayBold: (overlayBold) => set({ overlayBold }),
+  setOverlayTrackLen: (overlayTrackLen) => set({ overlayTrackLen }),
   setOverlayColor: (overlayColor) => set({ overlayColor }),
   setOverlayBgColor: (overlayBgColor) => set({ overlayBgColor }),
   setOverlayBgOpacity: (overlayBgOpacity) => set({ overlayBgOpacity }),
@@ -437,6 +449,9 @@ export const useStudio = create<StudioState>((set, get) => ({
                   thumbScale: cur.overlayThumbScale,
                   thumbShape: cur.overlayThumbShape,
                   font: cur.overlayFont,
+                  bold: cur.overlayBold,
+                  fontScale: cur.overlayFontScale,
+                  trackLenPct: cur.overlayTrackLen,
                   color: cur.overlayColor,
                   bgColor: cur.overlayBgColor,
                   bgOpacity: cur.overlayBgOpacity,
@@ -517,7 +532,9 @@ export function selectCurrentVariation(s: StudioState): string {
 }
 
 // Build the CSS font-variation-settings string (quoted-tag form) for the
-// current frame — used by the preview overlay's code display.
+// current frame — used by the preview overlay's code display. Fixed decimals
+// (same setting as the slider's live value) so a centred code line does not
+// jitter left/right as the values change.
 export function selectCurrentCssVariation(s: StudioState): string {
   const values = computeAxisValues(
     s.axes,
@@ -525,7 +542,7 @@ export function selectCurrentCssVariation(s: StudioState): string {
     s.easing,
     s.axisMoveMode
   );
-  return buildCssFontVariationSettings(values);
+  return buildCssFontVariationSettings(values, s.overlayValueDecimals);
 }
 
 // Build the axis display info for the current frame — used by the preview overlay.

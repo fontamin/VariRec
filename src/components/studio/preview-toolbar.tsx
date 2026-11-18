@@ -121,6 +121,12 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
   const setOverlayThumbShape = useStudio((s) => s.setOverlayThumbShape);
   const overlayFont = useStudio((s) => s.overlayFont);
   const setOverlayFont = useStudio((s) => s.setOverlayFont);
+  const overlayFontScale = useStudio((s) => s.overlayFontScale);
+  const setOverlayFontScale = useStudio((s) => s.setOverlayFontScale);
+  const overlayBold = useStudio((s) => s.overlayBold);
+  const setOverlayBold = useStudio((s) => s.setOverlayBold);
+  const overlayTrackLen = useStudio((s) => s.overlayTrackLen);
+  const setOverlayTrackLen = useStudio((s) => s.setOverlayTrackLen);
   const overlayColor = useStudio((s) => s.overlayColor);
   const setOverlayColor = useStudio((s) => s.setOverlayColor);
   const overlayBgColor = useStudio((s) => s.overlayBgColor);
@@ -373,7 +379,7 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                 label="Gap to text"
                 value={overlayTextGap}
                 min={0}
-                max={3}
+                max={12}
                 step={0.1}
                 onChange={setOverlayTextGap}
                 display={`${overlayTextGap.toFixed(1)}em`}
@@ -418,6 +424,24 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                   step={0.1}
                   onChange={setOverlayNameGap}
                   display={`${overlayNameGap.toFixed(1)}em`}
+                />
+                <SlideRow
+                  label="Text size"
+                  value={overlayFontScale}
+                  min={0.6}
+                  max={2.5}
+                  step={0.05}
+                  onChange={setOverlayFontScale}
+                  display={`${Math.round(overlayFontScale * 100)}%`}
+                />
+                <SlideRow
+                  label="Track length"
+                  value={overlayTrackLen}
+                  min={20}
+                  max={100}
+                  step={1}
+                  onChange={setOverlayTrackLen}
+                  display={`${overlayTrackLen}%`}
                 />
               </div>
 
@@ -467,9 +491,14 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                   checked={overlayCentered}
                   onChange={setOverlayCentered}
                 />
+                <CheckRow
+                  label="Bold"
+                  checked={overlayBold}
+                  onChange={setOverlayBold}
+                />
               </div>
 
-              {overlayShowLiveValue && (
+              {(overlayShowLiveValue || overlayShowCss) && (
                 <SlideRow
                   label="Value decimals"
                   value={overlayValueDecimals}

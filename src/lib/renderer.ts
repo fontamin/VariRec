@@ -69,6 +69,9 @@ export interface OverlayConfig {
   cssGap: number; // gap between slider panel and CSS line, in em
   textGap: number; // gap between the overlay stack and the text block, in em
   font: string; // css font-family stack for overlay text
+  bold: boolean; // draw overlay text in bold (700)
+  fontScale: number; // overlay TEXT size multiplier (1 = default)
+  trackLenPct: number; // slider track length as % of canvas width (20..100)
   color: string; // overlay text/fill color
   bgColor: string; // panel background color
   bgOpacity: number; // 0..1 (0 = transparent panel)
@@ -105,10 +108,13 @@ export function buildVariationString(variation: AxisValue[]): string {
     .join(", ");
 }
 
-export function buildCssFontVariationSettings(variation: AxisValue[]): string {
+export function buildCssFontVariationSettings(
+  variation: AxisValue[],
+  decimals = 2
+): string {
   if (variation.length === 0) return "normal";
   return variation
-    .map((a) => `"${a.tag}" ${roundForCss(a.value)}`)
+    .map((a) => `"${a.tag}" ${formatValue(a.value, decimals)}`)
     .join(", ");
 }
 
@@ -261,8 +267,12 @@ export interface OverlayMetrics {
 }
 
 function cssCodeText(o: OverlayConfig): string {
+  // Fixed decimals (same setting as the slider's live value) so the string
+  // keeps a constant width across frames — a centred code line would
+  // otherwise jitter left/right every time the integer-part length changed.
   return `font-variation-settings: ${buildCssFontVariationSettings(
-    o.axes.map((a) => ({ tag: a.tag, value: a.value }))
+    o.axes.map((a) => ({ tag: a.tag, value: a.value })),
+    o.valueDecimals
   )};`;
 }
 
@@ -302,7 +312,10 @@ export function computeOverlayMetrics(
   // The slider block only exists when the "slider" toggle is on; the name,
   // min–max labels and the value pill are decorations that live inside it.
   const slidersOn = o.showSliders && o.axes.length > 0;
-  const fontPx = Math.max(9, Math.round(width * 0.016 * s));
+  // Overlay TEXT size multiplier (independent of the panel/thumb scale so the
+  // font can be grown without moving every other piece of geometry).
+  const fs = Math.min(3, Math.max(0.5, o.fontScale || 1));
+  const fontPx = Math.max(9, Math.round(width * 0.016 * s * fs));
   const pad = Math.max(8, Math.round(width * 0.014 * s));
   const innerPad = Math.max(6, Math.round(pad * 0.85));
   const panelRx = Math.max(6, Math.round(innerPad * 0.9));
@@ -332,7 +345,7 @@ export function computeOverlayMetrics(
     Math.min(Math.max(o.nameGap, 0), 4) * fontPx
   );
   const textGapPx = Math.round(
-    Math.min(Math.max(o.textGap, 0), 6) * fontPx
+    Math.min(Math.max(o.textGap, 0), 12) * fontPx
   );
 
   // Value pill riding ON the thumb (Material-style label). It replaces the
@@ -369,7 +382,17 @@ export function computeOverlayMetrics(
     slidersOn && o.showMinMax
       ? Math.ceil(minMaxChars(o) * 0.62 * minMaxFont)
       : 0;
-  const flankGap = Math.max(4, Math.round(fontPx * 0.5));
+  // Base flank gap. When the value pill rides ON the thumb AND min/max labels
+  // are shown, the pill overhangs the track ends by half its width — reserve
+  // that much room (plus a breath) so the pill never lands on the numbers at
+  // the extremes. The extra flank room comes out of the track width, which is
+  // exactly the "make the sliders a bit smaller" behaviour we want here.
+  const baseFlankGap = Math.max(4, Math.round(fontPx * 0.5));
+  const pillFlankGap = pillOn
+    ? Math.ceil(pillW / 2 + fontPx * 0.35)
+    : baseFlankGap;
+  const flankGap =
+    minMaxLabelW > 0 ? Math.max(baseFlankGap, pillFlankGap) : baseFlankGap;
   const trackRowH = Math.max(
     Math.round(thumbD * 1.25),
     Math.round(minMaxFont * 1.35)
@@ -379,10 +402,14 @@ export function computeOverlayMetrics(
   const trackFlank = minMaxLabelW > 0 ? minMaxLabelW * 2 + flankGap * 2 : 0;
   const availForTrack =
     width - pad * 2 - innerPad * 2 - nameSpan - trackFlank - pillBuffer * 2;
+  // Track length as a percentage of the canvas width (20..100). The default
+  // of 30 reproduces the previous fixed width*0.3 behaviour; the clamp to
+  // availForTrack keeps the row inside the panel no matter what.
+  const lenPct = Math.min(100, Math.max(20, o.trackLenPct || 30)) / 100;
   const trackW = Math.max(
     fontPx * 6,
     Math.min(
-      Math.round(width * 0.3 * s),
+      Math.round(width * lenPct * s),
       Math.max(availForTrack, fontPx * 6)
     )
   );
@@ -539,6 +566,7 @@ function buildOverlaySvg(
   const m = computeOverlayMetrics(width, height, o, textBlock);
   const parts: string[] = [];
   const fontAttr = `font-family="${escapeAttr(o.font)}"`;
+  const weightAttr = o.bold ? ' font-weight="700"' : "";
   const fill = escapeAttr(o.color);
   if (o.showSliders && m.panelH > 0) {
     if (o.bgOpacity > 0) {
@@ -567,7 +595,7 @@ function buildOverlaySvg(
           .filter(Boolean)
           .join(" ");
         parts.push(
-          `<text x="${round2(contentX + m.pillBuffer + m.nameW)}" y="${round2(cy + m.fontPx * 0.35)}" text-anchor="end" fill="${fill}" ${fontAttr} font-size="${m.fontPx}">${label}</text>`
+          `<text x="${round2(contentX + m.pillBuffer + m.nameW)}" y="${round2(cy + m.fontPx * 0.35)}" text-anchor="end" fill="${fill}" ${fontAttr}${weightAttr} font-size="${m.fontPx}">${label}</text>`
         );
       }
 
@@ -575,10 +603,10 @@ function buildOverlaySvg(
       if (m.minMaxLabelW > 0) {
         const lb = cy + m.minMaxFont * 0.35;
         parts.push(
-          `<text x="${round2(trackX - m.flankGap)}" y="${round2(lb)}" text-anchor="end" fill="${fill}" fill-opacity="0.75" ${fontAttr} font-size="${m.minMaxFont}">${fmtNum(a.min)}</text>`
+          `<text x="${round2(trackX - m.flankGap)}" y="${round2(lb)}" text-anchor="end" fill="${fill}" fill-opacity="0.75" ${fontAttr}${weightAttr} font-size="${m.minMaxFont}">${fmtNum(a.min)}</text>`
         );
         parts.push(
-          `<text x="${round2(trackX + m.trackW + m.flankGap)}" y="${round2(lb)}" text-anchor="start" fill="${fill}" fill-opacity="0.75" ${fontAttr} font-size="${m.minMaxFont}">${fmtNum(a.max)}</text>`
+          `<text x="${round2(trackX + m.trackW + m.flankGap)}" y="${round2(lb)}" text-anchor="start" fill="${fill}" fill-opacity="0.75" ${fontAttr}${weightAttr} font-size="${m.minMaxFont}">${fmtNum(a.max)}</text>`
         );
       }
 
@@ -604,7 +632,7 @@ function buildOverlaySvg(
           `<rect x="${round2(pcx - m.pillW / 2)}" y="${round2(cy - m.pillH / 2)}" width="${round2(m.pillW)}" height="${round2(m.pillH)}" rx="${round2(prx)}" fill="${fill}"/>`
         );
         parts.push(
-          `<text x="${pcx}" y="${round2(cy + m.pillFont * 0.35)}" text-anchor="middle" fill="${m.pillTextFill}" ${fontAttr} font-size="${m.pillFont}">${formatValue(a.value, o.valueDecimals)}</text>`
+          `<text x="${pcx}" y="${round2(cy + m.pillFont * 0.35)}" text-anchor="middle" fill="${m.pillTextFill}" ${fontAttr}${weightAttr} font-size="${m.pillFont}">${formatValue(a.value, o.valueDecimals)}</text>`
         );
       } else {
         parts.push(thumbSvg(o.thumbShape, thumbCx, cy, m.thumbR, fill));
@@ -624,7 +652,7 @@ function buildOverlaySvg(
       ? m.cssBarX + m.cssBarW / 2
       : m.cssBarX + m.innerPad;
     parts.push(
-      `<text x="${round2(tx)}" y="${round2(m.cssBarY + m.cssBarH / 2 + m.cssFontPx * 0.36)}" text-anchor="${anchor}" fill="${fill}" ${fontAttr} font-size="${m.cssFontPx}" xml:space="preserve">${escapeXml(cssText)}</text>`
+      `<text x="${round2(tx)}" y="${round2(m.cssBarY + m.cssBarH / 2 + m.cssFontPx * 0.36)}" text-anchor="${anchor}" fill="${fill}" ${fontAttr}${weightAttr} font-size="${m.cssFontPx}" xml:space="preserve">${escapeXml(cssText)}</text>`
     );
   }
 
