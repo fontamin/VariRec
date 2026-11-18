@@ -179,7 +179,7 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
             label="Font size"
             value={fontSize}
             min={12}
-            max={400}
+            max={1000}
             step={1}
             onChange={setFontSize}
             display={`${fontSize}px`}
