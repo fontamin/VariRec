@@ -793,7 +793,7 @@ const probeCtxs = new Map<string, CanvasRenderingContext2D>();
 
 function getProbeCtx(w: number, h: number): CanvasRenderingContext2D | null {
   const key = `${w}x${h}`;
-  let ctx = probeCtxs.get(key);
+  let ctx = probeCtxs.get(key) ?? null;
   if (!ctx) {
     const c = document.createElement("canvas");
     c.width = w;

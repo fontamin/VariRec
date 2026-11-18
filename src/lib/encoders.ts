@@ -233,18 +233,39 @@ async function encodeWebCodecs(
   );
   const total = sequence.length;
 
-  const target = kind === "mp4" ? new Mp4Target() : new WebMTarget();
-  const MuxerCtor = kind === "mp4" ? Mp4Muxer : WebMMuxer;
-  const muxer = new MuxerCtor({
-    target,
-    video: {
-      codec: kind === "mp4" ? "avc" : "V_VP9",
-      width,
-      height,
-      frameRate: opts.fps,
-    },
-    fastStart: "in-memory",
-  });
+  // mp4-muxer and webm-muxer ship two independent `Muxer` classes whose
+  // option types don't form a compatible union (each brand-checks its own
+  // Target), so the target + muxer pair is built per format explicitly.
+  let target: Mp4Target | WebMTarget;
+  let muxer: Mp4Muxer<Mp4Target> | WebMMuxer<WebMTarget>;
+  if (kind === "mp4") {
+    const mp4Target = new Mp4Target();
+    muxer = new Mp4Muxer({
+      target: mp4Target,
+      video: {
+        codec: "avc",
+        width,
+        height,
+        frameRate: opts.fps,
+      },
+      fastStart: "in-memory",
+    });
+    target = mp4Target;
+  } else {
+    const webmTarget = new WebMTarget();
+    // webm-muxer has no `fastStart` option; it buffers the file in memory
+    // regardless, so runtime behaviour is unchanged.
+    muxer = new WebMMuxer({
+      target: webmTarget,
+      video: {
+        codec: "V_VP9",
+        width,
+        height,
+        frameRate: opts.fps,
+      },
+    });
+    target = webmTarget;
+  }
 
   const codecCfg =
     kind === "mp4"
@@ -287,7 +308,8 @@ async function encodeWebCodecs(
   encoder.close();
   if (encoderError) throw encoderError;
   muxer.finalize();
-  const buffer = (target as Mp4Target).buffer;
+  // Both ArrayBufferTargets expose the finalized file as `buffer: ArrayBuffer`.
+  const buffer = target.buffer;
   const type = kind === "mp4" ? "video/mp4" : "video/webm";
   return new Blob([buffer], { type });
 }

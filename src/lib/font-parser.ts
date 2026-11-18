@@ -207,7 +207,9 @@ function detectFormat(buffer: ArrayBuffer): FontFormat {
 }
 
 // Decompress zlib data (RFC 1950) using the browser-native DecompressionStream.
-async function zlibInflate(data: Uint8Array): Promise<Uint8Array> {
+// `Uint8Array<ArrayBuffer>` (not the default `Uint8Array<ArrayBufferLike>`) so
+// the value is directly assignable to the DOM's `BufferSource` on write().
+async function zlibInflate(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   const ds = new DecompressionStream("deflate");
   const writer = ds.writable.getWriter();
   writer.write(data);
@@ -316,7 +318,11 @@ function loadWoff2Decoder(): Promise<
   if (woff2Promise) return woff2Promise;
   woff2Promise = new Promise((resolve, reject) => {
     const w = window as unknown as {
-      Module?: { decompress: (b: Uint8Array) => Uint8Array | false };
+      Module?: {
+        decompress?: (b: Uint8Array) => Uint8Array | false;
+        // Emscripten bootstrap hook — fires once the WASM decoder is ready.
+        onRuntimeInitialized?: () => void;
+      };
     };
     // Pre-seed Module so the Emscripten bootstrapper picks up our callback.
     w.Module = {
