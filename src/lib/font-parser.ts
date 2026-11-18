@@ -331,7 +331,9 @@ function loadWoff2Decoder(): Promise<
       },
     };
     const script = document.createElement("script");
-    script.src = "/wawoff2-decompress.js";
+    // Respect the build-time base path (GitHub Pages project sites are served
+    // from /<repo>/ — see next.config.ts). Empty locally, "/fontamin" on Pages.
+    script.src = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/wawoff2-decompress.js`;
     script.async = true;
     script.onerror = () =>
       reject(new Error("Failed to load the WOFF2 decoder script."));

@@ -52,3 +52,11 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# local sandbox artifacts — not part of the app, never published
+/tool-results/
+/upload/
+/download/
+/tests/
+/examples/
+/db/

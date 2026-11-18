@@ -14,35 +14,37 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Variable Font Motion Studio",
+  title: "VariRec — Variable Font Animation Studio",
   description:
-    "Drag & drop a variable font, animate its axes, and export the result as a GIF or MP4 — entirely in your browser.",
+    "Drag & drop a variable font, animate its axes, and export the result as GIF, MP4 or WebM — entirely in your browser. Built with Z.ai.",
   keywords: [
+    "VariRec",
     "variable font",
     "font animation",
     "variable axes",
+    "font-variation-settings",
     "GIF export",
     "MP4 export",
+    "WebM export",
     "typography",
     "WebCodecs",
   ],
   authors: [{ name: "Z.ai" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
   openGraph: {
-    title: "Variable Font Motion Studio",
+    title: "VariRec — Variable Font Animation Studio",
     description:
-      "Animate variable font axes and export to GIF or MP4 — 100% client-side.",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+      "Animate variable font axes and export to GIF, MP4 or WebM — 100% client-side, built with Z.ai.",
+    siteName: "VariRec",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Variable Font Motion Studio",
+    title: "VariRec — Variable Font Animation Studio",
     description:
-      "Animate variable font axes and export to GIF or MP4 — 100% client-side.",
+      "Animate variable font axes and export to GIF, MP4 or WebM — 100% client-side, built with Z.ai.",
   },
 };
 

@@ -27,11 +27,15 @@ export default function Home() {
               <Waves className="size-4" />
             </div>
             <div className="leading-tight">
-              <h1 className="text-sm font-bold tracking-tight">
-                Variable Font Motion Studio
+              <h1 className="flex items-center gap-1.5 text-sm font-bold tracking-tight">
+                VariRec
+                <span className="rounded-full border bg-muted/60 px-1.5 py-px text-[9px] font-medium leading-none text-muted-foreground">
+                  v1.0
+                </span>
               </h1>
               <p className="hidden text-[11px] text-muted-foreground sm:block">
-                Drag &amp; drop a variable font · animate its axes · export GIF / MP4
+                Drag &amp; drop a variable font · animate its axes · export GIF /
+                MP4 / WebM
               </p>
             </div>
           </div>
@@ -125,12 +129,12 @@ export default function Home() {
       <footer className="mt-auto border-t bg-background/80">
         <div className="mx-auto flex max-w-[1500px] flex-col items-center justify-between gap-1.5 px-4 py-2.5 text-[11px] text-muted-foreground sm:flex-row sm:px-6">
           <p>
-            Built with Next.js · fonts are parsed and rendered entirely in your
-            browser — nothing is uploaded.
+            VariRec v1.0 · MIT License · fonts are parsed and rendered entirely
+            in your browser — nothing is uploaded.
           </p>
           <p className="flex items-center gap-1.5">
             <Sparkles className="size-2.5" />
-            Powered by WebCodecs &amp; gifenc
+            Built with Z.ai · Powered by WebCodecs &amp; gifenc
           </p>
         </div>
       </footer>

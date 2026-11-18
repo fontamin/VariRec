@@ -1,0 +1,70 @@
+# VariRec — GitHub Pages deployment.
+#
+# Builds the project as a fully static site (`output: "export"`). The result
+# lands in `out/` — the folder that contains the main `index.html` — and that
+# exact folder is uploaded and published to GitHub Pages.
+#
+# Enable once in the repository: Settings → Pages → Source = "GitHub Actions".
+
+name: Deploy VariRec to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          static_site_generator: next
+          # Enable Pages automatically if it is not enabled yet.
+          enablement: true
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: "Build static site (output: out/)"
+        run: bun run build
+        env:
+          # e.g. "/fontamin" — asset URLs resolve under
+          # https://<user>.github.io/<repo>/. Empty for a user site.
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      - name: Ensure .nojekyll (serve _next/ untouched)
+        run: touch out/.nojekyll
+
+      - name: Upload artifact (folder that contains index.html)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
