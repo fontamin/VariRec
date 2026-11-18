@@ -50,13 +50,9 @@ test
 prompt
 
 server.log
-# Skills directory
-/skills/
 
-# local sandbox artifacts — not part of the app, never published
-/tool-results/
+# local sandbox infrastructure & artifacts — not part of the app
+/.zscripts/
+/skills/
 /upload/
-/download/
-/tests/
-/examples/
-/db/
+/tool-results/

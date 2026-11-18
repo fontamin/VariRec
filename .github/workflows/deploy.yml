@@ -46,9 +46,9 @@ jobs:
       - name: "Build static site (output: out/)"
         run: bun run build
         env:
-          # e.g. "/fontamin" — asset URLs resolve under
-          # https://<user>.github.io/<repo>/. Empty for a user site.
-          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # "/VariRec" for https://fontamin.github.io/VariRec/ — asset URLs
+          # resolve under the Pages site. Falls back to "/<repo-name>".
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path || format('/{0}', github.event.repository.name) }}
 
       - name: Ensure .nojekyll (serve _next/ untouched)
         run: touch out/.nojekyll

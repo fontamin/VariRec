@@ -94,30 +94,31 @@ project with `next build` (`output: "export"`), which produces a fully static
 site in **`out/`** — the folder that contains the main **`index.html`** — and
 deploys exactly that folder to GitHub Pages.
 
-To go live:
+To go live at **https://fontamin.github.io/VariRec/**:
 
-1. Push this repository to GitHub (for example under the name `fontamin`).
-2. In the repository, open **Settings → Pages → Build and deployment** and set
-   **Source** to **GitHub Actions**.
-3. Push to `main` (or run the workflow manually via **Run workflow**).
+1. Push this repository to the **`fontamin`** account on GitHub under the name
+   **`VariRec`** (`github.com/fontamin/VariRec`).
+2. Push to `main` — or run the workflow manually from the **Actions** tab
+   (**Run workflow**). The first run enables GitHub Pages automatically.
 
 The workflow will:
 
 1. check out the code and set up Bun,
-2. enable GitHub Pages and resolve the base path from the Pages configuration
-   (`/fontamin` for a project site),
+2. enable GitHub Pages (if not enabled yet) and resolve the base path
+   (`/VariRec`) from the Pages configuration,
 3. run `bun install` and `bun run build` — the static site lands in `out/`,
 4. upload the `out/` artifact (the folder holding `index.html`) and publish it.
 
 Your site will be available at:
 
 ```
-https://<username>.github.io/fontamin/
+https://fontamin.github.io/VariRec/
 ```
 
-The base path is picked up automatically, so the same code builds without a
-prefix locally and with `/fontamin` on GitHub Pages — no manual configuration
-needed. If you rename the repository, the deployed URL follows automatically.
+The base path is picked up automatically from the repository name, so the same
+code builds without a prefix locally and with `/VariRec` on GitHub Pages — no
+manual configuration needed. If the repository is ever renamed, the deployed
+URL follows automatically.
 
 ## Tech stack
 
