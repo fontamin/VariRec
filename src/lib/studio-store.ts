@@ -544,3 +544,9 @@ export function selectCurrentAxesInfo(s: StudioState): AxisDisplayInfo[] {
     max: a.max,
   }));
 }
+
+// Debug/testing handle — lets browser tooling inspect and drive the store
+// (harmless in production: only adds a window reference in the client).
+if (typeof window !== "undefined") {
+  (window as unknown as { __studio?: typeof useStudio }).__studio = useStudio;
+}

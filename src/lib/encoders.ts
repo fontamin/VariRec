@@ -47,6 +47,21 @@ export function formatSupportsLoopMode(
   return true;
 }
 
+// GIF stores each frame's delay in whole centiseconds (1/100 s steps), and
+// browsers ignore delays below 2cs by snapping them to 100 ms. The closest
+// legal delay therefore defines the ACTUAL playback rate, which can differ
+// from the requested fps (e.g. 60 fps → 20 ms → 50 fps). The recorder uses
+// this to keep the clip's wall-clock duration exact, and the UI surfaces the
+// real rate so the user is never misled.
+export function gifTiming(fps: number): {
+  delayCs: number;
+  actualFps: number;
+} {
+  const safe = Math.max(1, fps);
+  const delayCs = Math.max(2, Math.round(100 / safe));
+  return { delayCs, actualFps: 100 / delayCs };
+}
+
 function makeEven(n: number): number {
   return n % 2 === 0 ? n : n + 1;
 }
@@ -150,11 +165,18 @@ export async function encodeGif(opts: RecorderOptions): Promise<Blob> {
   canvas.height = height;
 
   const gif = GIFEncoder();
-  const delay = Math.max(20, Math.round(1000 / opts.fps));
+  // Frame delay must be a legal GIF value (whole centiseconds, ≥ 2cs so no
+  // browser snaps it to 100 ms). gifenc takes milliseconds and stores
+  // round(ms/10) centiseconds. The frame count is derived from the ACTUAL
+  // rate, so the exported clip lasts exactly the designed duration even
+  // though the playback rate is quantized (60 fps → 50 fps → 150 frames for
+  // a 3 s clip, not 180 frames stretched to 3.6 s).
+  const { delayCs, actualFps } = gifTiming(opts.fps);
+  const delay = delayCs * 10;
   const sequence = computeProgressSequence(
     opts.loopMode,
     "gif",
-    opts.fps,
+    actualFps,
     opts.duration
   );
   const total = sequence.length;

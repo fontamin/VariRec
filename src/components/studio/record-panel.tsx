@@ -5,6 +5,7 @@ import { Circle, Download, Film, Loader2, X, FileImage, FileVideo } from "lucide
 import { useStudio } from "@/lib/studio-store";
 import {
   isWebCodecsSupported,
+  gifTiming,
   type VideoFormat,
 } from "@/lib/encoders";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ export function RecordPanel() {
   const cancelRecording = useStudio((s) => s.cancelRecording);
   const clearExport = useStudio((s) => s.clearExport);
   const axes = useStudio((s) => s.axes);
+  const fps = useStudio((s) => s.fps);
 
   const wcSupported = useSyncExternalStore(
     () => () => {},
@@ -46,6 +48,13 @@ export function RecordPanel() {
   const animatingCount = axes.filter((a) => a.animate).length;
   const hasMotion = animatingCount > 0;
   const pingpong = loopMode === "pingpong";
+
+  // GIF delays are stored in 1/100 s steps (and nothing below 2cs survives
+  // the browser), so the exported GIF can play at a different rate than the
+  // requested fps. Always tell the user the real rate on the GIF button.
+  const { actualFps: gifActualFps } = gifTiming(fps);
+  const gifFpsLabel = parseFloat(gifActualFps.toFixed(1)).toString();
+  const gifFpsDiffers = Math.abs(gifActualFps - fps) > 0.05;
 
   // Video "loop" renders forward + backward so the clip loops seamlessly.
   // With binary movement and more than one animated axis that backward pass
@@ -71,7 +80,7 @@ export function RecordPanel() {
     {
       value: "gif",
       label: "GIF",
-      desc: pingpong ? "Ping-pong loop" : loopMode === "loop" ? "Loop" : "Single",
+      desc: `${pingpong ? "Ping-pong loop" : loopMode === "loop" ? "Loop" : "Single"} · ${gifFpsLabel} fps`,
       icon: FileImage,
       available: true,
     },
@@ -159,6 +168,13 @@ export function RecordPanel() {
                 );
               })}
             </div>
+
+            {gifFpsDiffers && (
+              <p className="rounded bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground">
+                GIF frame delays are stored in 1/100&nbsp;s steps — {fps} fps
+                exports at {gifFpsLabel} fps. Clip duration stays exact.
+              </p>
+            )}
 
             {pingpong && (
               <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
