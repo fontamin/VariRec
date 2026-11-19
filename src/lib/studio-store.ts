@@ -26,7 +26,11 @@ import type {
   AxisMoveMode,
   TextDirection,
 } from "./studio-store-types";
-import { DEFAULT_OVERLAY_FONT } from "./studio-store-types";
+import {
+  DEFAULT_OVERLAY_FONT,
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
+} from "./studio-store-types";
 
 export const REGISTERED_FAMILY = "VFStudioFont";
 
@@ -68,6 +72,7 @@ export interface StudioState {
   easing: EasingType;
   loopMode: LoopMode;
   axisMoveMode: AxisMoveMode; // binary bit-stepping or sync (all together)
+  repeat: number; // how many cycles the export tiles back to back (1 = single cycle)
 
   // Overlay (axis sliders + CSS code baked into preview + export)
   overlayEnabled: boolean;
@@ -93,6 +98,15 @@ export interface StudioState {
   overlayBgOpacity: number;
   overlayScale: number;
   overlayPosition: OverlayPosition;
+  overlayAxisGap: number; // vertical gap between slider rows, em of overlay font
+
+  // v1.1 direct-manipulation layout offsets (canvas px), set by dragging the
+  // preview frames. 0,0 = auto layout (vAlign/align + overlay position).
+  textOffsetX: number;
+  textOffsetY: number;
+  panelOffsetX: number;
+  panelOffsetY: number;
+  snapCenterEnabled: boolean; // magnet-snap dragged elements to the canvas width centre
 
   // Playback
   isPlaying: boolean;
@@ -123,6 +137,7 @@ export interface StudioState {
   setEasing: (e: EasingType) => void;
   setLoopMode: (m: LoopMode) => void;
   setAxisMoveMode: (m: AxisMoveMode) => void;
+  setRepeat: (n: number) => void;
 
   setOverlayEnabled: (b: boolean) => void;
   setOverlayShowSliders: (b: boolean) => void;
@@ -147,6 +162,13 @@ export interface StudioState {
   setOverlayBgOpacity: (n: number) => void;
   setOverlayScale: (n: number) => void;
   setOverlayPosition: (p: OverlayPosition) => void;
+  setOverlayAxisGap: (n: number) => void;
+
+  // Direct manipulation (drag in the preview)
+  setTextOffset: (x: number, y: number) => void;
+  setPanelOffset: (x: number, y: number) => void;
+  setSnapCenterEnabled: (b: boolean) => void;
+  resetLayout: () => void;
 
   setAxisCurrent: (tag: string, value: number) => void;
   setAxisAnim: (tag: string, from: number, to: number) => void;
@@ -214,6 +236,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   easing: "easeInOut",
   loopMode: "pingpong",
   axisMoveMode: "binary",
+  repeat: 1,
 
   overlayEnabled: true,
   overlayShowSliders: true,
@@ -238,6 +261,13 @@ export const useStudio = create<StudioState>((set, get) => ({
   overlayBgOpacity: 0,
   overlayScale: 1,
   overlayPosition: "bottom",
+  overlayAxisGap: 1.2,
+
+  textOffsetX: 0,
+  textOffsetY: 0,
+  panelOffsetX: 0,
+  panelOffsetY: 0,
+  snapCenterEnabled: true,
 
   isPlaying: false,
   currentTime: 0,
@@ -284,7 +314,15 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   setText: (text) => set({ text }),
-  setFontSize: (fontSize) => set({ fontSize }),
+  // Single source of truth for the size range: every entry point (sliders,
+  // corner handle, persisted-state hydration) funnels through this clamp.
+  setFontSize: (fontSize) =>
+    set({
+      fontSize: Math.min(
+        FONT_SIZE_MAX,
+        Math.max(FONT_SIZE_MIN, Math.round(fontSize))
+      ),
+    }),
   setTextColor: (textColor) => set({ textColor }),
   setBgColor: (bgColor) => set({ bgColor }),
   setLetterSpacing: (letterSpacing) => set({ letterSpacing }),
@@ -300,6 +338,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   setEasing: (easing) => set({ easing }),
   setLoopMode: (loopMode) => set({ loopMode }),
   setAxisMoveMode: (axisMoveMode) => set({ axisMoveMode }),
+  setRepeat: (repeat) => set({ repeat: Math.max(1, Math.round(repeat)) }),
 
   setOverlayEnabled: (overlayEnabled) => set({ overlayEnabled }),
   setOverlayShowSliders: (overlayShowSliders) => set({ overlayShowSliders }),
@@ -326,6 +365,15 @@ export const useStudio = create<StudioState>((set, get) => ({
   setOverlayBgOpacity: (overlayBgOpacity) => set({ overlayBgOpacity }),
   setOverlayScale: (overlayScale) => set({ overlayScale }),
   setOverlayPosition: (overlayPosition) => set({ overlayPosition }),
+  setOverlayAxisGap: (overlayAxisGap) => set({ overlayAxisGap }),
+
+  setTextOffset: (textOffsetX, textOffsetY) =>
+    set({ textOffsetX, textOffsetY }),
+  setPanelOffset: (panelOffsetX, panelOffsetY) =>
+    set({ panelOffsetX, panelOffsetY }),
+  setSnapCenterEnabled: (snapCenterEnabled) => set({ snapCenterEnabled }),
+  resetLayout: () =>
+    set({ textOffsetX: 0, textOffsetY: 0, panelOffsetX: 0, panelOffsetY: 0 }),
 
   setAxisCurrent: (tag, value) =>
     set((s) => ({
@@ -419,6 +467,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         height: state.canvasHeight,
         fps: state.fps,
         duration: state.duration,
+        repeat: state.repeat,
         loopMode: state.loopMode,
         cancelled: () => cancelToken.cancelled,
         onProgress: (p) => set({ recordProgress: p }),
@@ -457,6 +506,9 @@ export const useStudio = create<StudioState>((set, get) => ({
                   bgOpacity: cur.overlayBgOpacity,
                   scale: cur.overlayScale,
                   position: cur.overlayPosition,
+                  axisGapEm: cur.overlayAxisGap,
+                  offsetX: cur.panelOffsetX,
+                  offsetY: cur.panelOffsetY,
                   axes: cur.axes.map((a, i) => ({
                     tag: a.tag,
                     name: a.name,
@@ -482,6 +534,8 @@ export const useStudio = create<StudioState>((set, get) => ({
             align: cur.align,
             vAlign: cur.vAlign,
             direction: resolveTextDirection(cur.text, cur.textDirection),
+            textOffsetX: cur.textOffsetX,
+            textOffsetY: cur.textOffsetY,
             overlay,
           };
           return cfg;

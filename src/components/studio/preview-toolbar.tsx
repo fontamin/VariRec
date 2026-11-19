@@ -2,9 +2,12 @@
 
 /**
  * Floating in-preview editor. Every styling control lives inside the preview
- * itself (Figma-style): text, font size, line height, letter spacing,
- * horizontal/vertical alignment, colors, canvas size and the axis-slider
- * overlay appearance (thumb size & shape, gap to the text block, …).
+ * itself (Figma-style): font size, line height, letter spacing, alignment,
+ * direction, colors, canvas size and the axis-slider overlay appearance.
+ *
+ * The spatial stuff (positions, sizes, gaps) is handled by DIRECT
+ * MANIPULATION on the preview itself (see edit-chrome.tsx) — there is no
+ * text-input tool here anymore: click the text on the canvas to edit it.
  *
  * The toolbar is DOM-only chrome — it is never baked into the exported
  * frames, which are rendered by the SVG renderer from the store alone.
@@ -15,7 +18,6 @@
 import { type ComponentType, type ReactNode } from "react";
 import {
   Type,
-  LetterText,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -28,6 +30,8 @@ import {
   AlignVerticalJustifyCenter,
 } from "lucide-react";
 import { useStudio } from "@/lib/studio-store";
+import { computeOverlayMetrics } from "@/lib/renderer";
+import { overlayCfgFrom, textBlockFor } from "@/lib/studio-metrics";
 import type {
   AlignMode,
   VAlign,
@@ -35,7 +39,11 @@ import type {
   ThumbShape,
   TextDirection,
 } from "@/lib/studio-store-types";
-import { THUMB_SHAPES, OVERLAY_FONTS } from "@/lib/studio-store-types";
+import {
+  THUMB_SHAPES,
+  OVERLAY_FONTS,
+  FONT_SIZE_MAX,
+} from "@/lib/studio-store-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,8 +77,6 @@ const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
 ];
 
 export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
-  const text = useStudio((s) => s.text);
-  const setText = useStudio((s) => s.setText);
   const fontSize = useStudio((s) => s.fontSize);
   const setFontSize = useStudio((s) => s.setFontSize);
   const lineHeight = useStudio((s) => s.lineHeight);
@@ -113,6 +119,8 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
   const setOverlayNameGap = useStudio((s) => s.setOverlayNameGap);
   const overlayCssGap = useStudio((s) => s.overlayCssGap);
   const setOverlayCssGap = useStudio((s) => s.setOverlayCssGap);
+  const overlayAxisGap = useStudio((s) => s.overlayAxisGap);
+  const setOverlayAxisGap = useStudio((s) => s.setOverlayAxisGap);
   const overlayTextGap = useStudio((s) => s.overlayTextGap);
   const setOverlayTextGap = useStudio((s) => s.setOverlayTextGap);
   const overlayThumbScale = useStudio((s) => s.overlayThumbScale);
@@ -137,6 +145,21 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
   const setOverlayScale = useStudio((s) => s.setOverlayScale);
   const overlayPosition = useStudio((s) => s.overlayPosition);
   const setOverlayPosition = useStudio((s) => s.setOverlayPosition);
+  const axes = useStudio((s) => s.axes);
+
+  // Overlay metrics mirror the renderer exactly, so the Row gap ceiling
+  // follows the canvas height: the gap may grow until the slider stack
+  // (plus the CSS line) fills the vertical space between the margins.
+  const gapMetrics = computeOverlayMetrics(
+    canvasWidth,
+    canvasHeight,
+    overlayCfgFrom(useStudio.getState()),
+    textBlockFor(useStudio.getState())
+  );
+  const rowGapMaxEm = Math.max(
+    0.2,
+    Math.round((gapMetrics.axisGapMaxPx / gapMetrics.fontPx) * 10) / 10
+  );
 
   // `placeTop` is computed by the preview stage (which knows the exact
   // text-block and overlay-stack geometry) and passed in as a prop.
@@ -153,33 +176,12 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
       aria-label="Preview style editor"
     >
       <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-md">
-        <Tool icon={LetterText} title="Text">
-          <Label className="text-[11px] text-muted-foreground">
-            Preview text
-          </Label>
-          <textarea
-            value={text}
-            onChange={(e) =>
-              setText(e.target.value.replace(/\n+$/, ""))
-            }
-            rows={3}
-            spellCheck={false}
-            dir="auto"
-            className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            placeholder="Type your text…"
-          />
-          <p className="text-[10px] leading-snug text-muted-foreground">
-            Tip: the text is editable directly on the canvas too — just click
-            it.
-          </p>
-        </Tool>
-
         <Tool icon={Type} title="Font size · line height · spacing">
           <SlideRow
             label="Font size"
             value={fontSize}
             min={12}
-            max={1800}
+            max={FONT_SIZE_MAX}
             step={1}
             onChange={setFontSize}
             display={`${fontSize}px`}
@@ -443,17 +445,25 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                   onChange={setOverlayTrackLen}
                   display={`${overlayTrackLen}%`}
                 />
+                <SlideRow
+                  label="Row gap"
+                  value={overlayAxisGap}
+                  min={0.2}
+                  max={rowGapMaxEm}
+                  step={0.1}
+                  onChange={setOverlayAxisGap}
+                  display={`${overlayAxisGap.toFixed(1)}em`}
+                />
+                <SlideRow
+                  label="CSS line gap"
+                  value={overlayCssGap}
+                  min={0.2}
+                  max={3}
+                  step={0.1}
+                  onChange={setOverlayCssGap}
+                  display={`${overlayCssGap.toFixed(1)}em`}
+                />
               </div>
-
-              <SlideRow
-                label="CSS line gap"
-                value={overlayCssGap}
-                min={0.2}
-                max={3}
-                step={0.1}
-                onChange={setOverlayCssGap}
-                display={`${overlayCssGap.toFixed(1)}em`}
-              />
 
               <div className="grid grid-cols-3 gap-x-2 gap-y-1 border-t pt-2">
                 <CheckRow

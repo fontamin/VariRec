@@ -80,6 +80,10 @@ export interface OverlayConfig {
   thumbScale: number; // thumb size multiplier
   thumbShape: ThumbShape;
   axes: AxisDisplayInfo[];
+  // v1.1 direct-manipulation layout (set by dragging the preview frames):
+  axisGapEm: number; // vertical gap between slider rows, em of overlay font
+  offsetX: number; // stack position offset, canvas px (0 = auto layout)
+  offsetY: number;
 }
 
 export interface RenderConfig {
@@ -98,6 +102,8 @@ export interface RenderConfig {
   align: "left" | "center" | "right";
   vAlign: VAlign;
   direction: "ltr" | "rtl"; // resolved base direction of the text block
+  textOffsetX: number; // text block drag offset, canvas px (0 = auto layout)
+  textOffsetY: number;
   overlay?: OverlayConfig | null;
 }
 
@@ -225,6 +231,22 @@ export function computeTextBlock(
   return { top, bottom: top + h, height: h };
 }
 
+// Apply the drag offsets to the auto-computed text block, clamping the result
+// so the block can never be dragged fully out of the canvas. Shared by the
+// SVG renderer, the ink backstop and the DOM preview so all three agree.
+export function applyTextOffset(
+  base: TextBlock,
+  offsetX: number,
+  offsetY: number,
+  height: number
+): TextBlock {
+  const top = Math.min(
+    Math.max(0, Math.round(base.top + offsetY)),
+    Math.max(0, height - base.height)
+  );
+  return { ...base, top, bottom: top + base.height };
+}
+
 export interface OverlayMetrics {
   pad: number;
   innerPad: number;
@@ -255,6 +277,7 @@ export interface OverlayMetrics {
   panelX: number;
   panelY: number;
   axisGap: number;
+  axisGapMaxPx: number; // row-gap ceiling in px — canvas height minus the rest of the stack
   trackLeft: number; // track x inside the block content (after name + min)
   cssOn: boolean;
   cssFontPx: number;
@@ -419,15 +442,11 @@ export function computeOverlayMetrics(
   const blockW = Math.min(maxBlock, trackRowW);
   const panelW = blockW + innerPad * 2;
 
-  const axisGap = Math.round(fontPx * 1.2);
-  const rowStack = trackRowH; // one compact row per axis
-  const n = o.axes.length;
-  const panelH =
-    slidersOn && n > 0 ? innerPad * 2 + rowStack * n + axisGap * (n - 1) : 0;
-
   // CSS code line — auto-shrink font if the string is longer than the bar.
   // The width estimate uses the widest possible value strings so the font
   // size (and therefore the bar geometry) stays constant across frames.
+  // (Computed before the row gap so the gap ceiling can account for the
+  // space the CSS line occupies.)
   const cssText = cssCodeText(o);
   const cssWidest = cssCodeWidestText(o);
   const availCss = Math.max(40, width - pad * 2 - innerPad * 2);
@@ -452,22 +471,62 @@ export function computeOverlayMetrics(
       )
     : 0;
 
+  // Vertical gap between slider rows (em of overlay font) — adjustable by
+  // dragging the gap handle between two rows directly in the preview, or
+  // with the Row gap slider. Its ceiling is the canvas height itself: the
+  // gap may grow until the panel (plus the CSS line) exactly fills the
+  // vertical space between the canvas margins.
+  const rowStack = trackRowH; // one compact row per axis
+  const n = o.axes.length;
+  const availStackH = Math.max(0, height - pad * 2);
+  const cssExtra =
+    slidersOn && cssOn ? cssGapPx + cssBarH : cssOn ? cssBarH : 0;
+  const availPanelH = Math.max(0, availStackH - cssExtra);
+  const axisGapMaxPx =
+    n > 1
+      ? Math.max(0, (availPanelH - innerPad * 2 - rowStack * n) / (n - 1))
+      : Math.max(0, availPanelH - innerPad * 2 - rowStack);
+  const axisGap = Math.round(
+    Math.min(Math.max(0, o.axisGapEm ?? 1.2), axisGapMaxPx / fontPx) * fontPx
+  );
+  const panelH =
+    slidersOn && n > 0 ? innerPad * 2 + rowStack * n + axisGap * (n - 1) : 0;
+
   // ── Vertical placement ────────────────────────────────────────────────
   // The whole stack (slider panel + CSS line) hugs the text block with
   // textGapPx between them, clamped so it never leaves the canvas.
   const stackH = panelH + (slidersOn && cssOn ? cssGapPx + cssBarH : cssOn ? cssBarH : 0);
   const minTop = pad;
   const maxTop = Math.max(minTop, height - pad - stackH);
-  let panelY = 0;
-  if (o.position === "top") {
-    panelY = Math.round(
-      Math.min(maxTop, Math.max(minTop, textBlock.top - textGapPx - stackH))
-    );
-  } else {
-    panelY = Math.round(
-      Math.min(maxTop, Math.max(minTop, textBlock.bottom + textGapPx))
-    );
-  }
+  const autoPanelY =
+    o.position === "top"
+      ? Math.round(
+          Math.min(maxTop, Math.max(minTop, textBlock.top - textGapPx - stackH))
+        )
+      : Math.round(
+          Math.min(maxTop, Math.max(minTop, textBlock.bottom + textGapPx))
+        );
+  const autoPanelX = o.centered
+    ? Math.max(pad, Math.round((width - panelW) / 2))
+    : pad;
+  const autoCssX = cssOn
+    ? o.centered
+      ? Math.max(pad, Math.round((width - cssBarW) / 2))
+      : pad
+    : 0;
+
+  // v1.1 direct-manipulation offsets: dragging the stack frame in the preview
+  // shifts panelX/panelY/cssBarX/cssBarY, clamped so nothing leaves the canvas.
+  const offX = Math.round(o.offsetX || 0);
+  const offY = Math.round(o.offsetY || 0);
+  const panelY = Math.min(
+    Math.max(0, autoPanelY + offY),
+    Math.max(0, height - stackH)
+  );
+  const panelX = Math.min(
+    Math.max(0, autoPanelX + offX),
+    Math.max(0, width - panelW)
+  );
   const cssBarY = cssOn
     ? Math.round(
         Math.min(
@@ -479,14 +538,8 @@ export function computeOverlayMetrics(
         )
       )
     : 0;
-
-  const panelX = o.centered
-    ? Math.max(pad, Math.round((width - panelW) / 2))
-    : pad;
   const cssBarX = cssOn
-    ? o.centered
-      ? Math.max(pad, Math.round((width - cssBarW) / 2))
-      : pad
+    ? Math.min(Math.max(0, autoCssX + offX), Math.max(0, width - cssBarW))
     : 0;
 
   const trackLeft =
@@ -522,6 +575,7 @@ export function computeOverlayMetrics(
     panelX,
     panelY,
     axisGap,
+    axisGapMaxPx,
     trackLeft,
     cssOn,
     cssFontPx,
@@ -676,24 +730,31 @@ export function buildSvgString(cfg: RenderConfig): string {
     align,
     vAlign,
     direction,
+    textOffsetX,
+    textOffsetY,
     overlay,
   } = cfg;
 
   const lines = text.length ? text.split("\n") : [" "];
-  const textBlock = computeTextBlock(
-    height,
-    fontSize,
-    lineHeight,
-    lines.length,
-    vAlign
+  const textBlock = applyTextOffset(
+    computeTextBlock(height, fontSize, lineHeight, lines.length, vAlign),
+    textOffsetX,
+    textOffsetY,
+    height
   );
   const top = textBlock.top;
   // Horizontal alignment is PHYSICAL (left/center/right stay where they are
   // on screen regardless of text direction). SVG text-anchor is LOGICAL —
   // with an RTL base direction start/end swap sides — so map the physical
   // alignment onto the matching logical anchor. anchorX stays physical.
-  const anchorX =
-    align === "center" ? width / 2 : align === "right" ? width - 24 : 24;
+  const anchorX = Math.min(
+    width,
+    Math.max(
+      0,
+      (align === "center" ? width / 2 : align === "right" ? width - 24 : 24) +
+        textOffsetX
+    )
+  );
   const physAnchor =
     align === "center" ? "middle" : align === "right" ? "end" : "start";
   const anchor =
@@ -735,7 +796,11 @@ export function buildSvgString(cfg: RenderConfig): string {
 </style>
 </defs>
 <rect x="0" y="0" width="${width}" height="${height}" fill="${escapeAttr(bgColor)}"/>
-<text class="vftxt" text-anchor="${anchor}"${dirStyle ? ` style="${dirStyle}"` : ""}>${tspans}</text>
+<!-- xml:space="preserve" keeps runs of spaces and leading/trailing spaces
+     exactly as typed, matching the DOM preview's white-space: pre. Without
+     it the SVG whitespace processor collapses them and the export no longer
+     looks like the preview. -->
+<text class="vftxt" xml:space="preserve" text-anchor="${anchor}"${dirStyle ? ` style="${dirStyle}"` : ""}>${tspans}</text>
 ${overlaySvg}</svg>`;
 }
 
@@ -944,12 +1009,17 @@ export async function renderFrameToCanvas(
   // coloured has not received its glyphs yet; give the font more chances.
   if (cfg.text.trim().length > 0) {
     const lines = cfg.text.split("\n").length;
-    const band = computeTextBlock(
-      cfg.height,
-      cfg.fontSize,
-      cfg.lineHeight,
-      lines,
-      cfg.vAlign
+    const band = applyTextOffset(
+      computeTextBlock(
+        cfg.height,
+        cfg.fontSize,
+        cfg.lineHeight,
+        lines,
+        cfg.vAlign
+      ),
+      cfg.textOffsetX,
+      cfg.textOffsetY,
+      cfg.height
     );
     for (let i = 0; i < MAX_TEXT_RETRIES && !bandHasInk(img, cfg, band); i++) {
       await yieldTick();

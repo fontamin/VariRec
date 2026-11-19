@@ -9,28 +9,31 @@ import {
   type ClipboardEvent,
   type FormEvent,
 } from "react";
-import { Type, Maximize2, Pencil, EyeOff, Settings2 } from "lucide-react";
+import { Type, Maximize2, Pencil, EyeOff, Settings2, Magnet } from "lucide-react";
 import {
   REGISTERED_FAMILY,
   selectCurrentVariation,
   selectCurrentCssVariation,
   selectCurrentAxesInfo,
   useStudio,
-  type StudioState,
 } from "@/lib/studio-store";
 import {
   computeOverlayMetrics,
-  computeTextBlock,
   hexToRgba,
   formatValue,
   pillRadius,
-  type OverlayConfig,
   type OverlayMetrics,
   type TextBlock,
 } from "@/lib/renderer";
 import type { ThumbShape, VAlign } from "@/lib/studio-store-types";
 import { resolveTextDirection } from "@/lib/renderer";
+import { overlayCfgFrom, textBlockFor } from "@/lib/studio-metrics";
 import { PreviewToolbar } from "@/components/studio/preview-toolbar";
+import {
+  EditChrome,
+  dragPanel,
+  type TextBox,
+} from "@/components/studio/edit-chrome";
 import { cn } from "@/lib/utils";
 
 interface SliderRefs {
@@ -40,50 +43,22 @@ interface SliderRefs {
   pillText: HTMLElement | null; // the number inside the pill
 }
 
-// Build the overlay config used by both the JSX layout and the per-frame
-// style applier, so they always agree on geometry.
-function overlayCfgFrom(s: StudioState): OverlayConfig {
-  return {
-    showSliders: s.overlayShowSliders,
-    showName: s.overlayShowName,
-    showTag: s.overlayShowTag,
-    showMinMax: s.overlayShowMinMax,
-    showLiveValue: s.overlayShowLiveValue,
-    valueDecimals: s.overlayValueDecimals,
-    showCss: s.overlayShowCss,
-    centered: s.overlayCentered,
-    nameGap: s.overlayNameGap,
-    cssGap: s.overlayCssGap,
-    textGap: s.overlayTextGap,
-    thumbScale: s.overlayThumbScale,
-    thumbShape: s.overlayThumbShape,
-    font: s.overlayFont,
-    bold: s.overlayBold,
-    fontScale: s.overlayFontScale,
-    trackLenPct: s.overlayTrackLen,
-    color: s.overlayColor,
-    bgColor: s.overlayBgColor,
-    bgOpacity: s.overlayBgOpacity,
-    scale: s.overlayScale,
-    position: s.overlayPosition,
-    axes: s.axes.map((a) => ({
-      tag: a.tag,
-      name: a.name,
-      value: a.current,
-      min: a.min,
-      max: a.max,
-    })),
-  };
-}
-
-function textBlockFor(s: StudioState): TextBlock {
-  return computeTextBlock(
-    s.canvasHeight,
-    s.fontSize,
-    s.lineHeight,
-    Math.max(1, s.text.split("\n").length),
-    s.vAlign
-  );
+// When there is no measurable text (e.g. the canvas text is empty), fall
+// back to a caret-sized box at the alignment anchor so the text frame and
+// its handles still have a sensible target.
+function fallbackTextBox(
+  align: "left" | "center" | "right",
+  textOffsetX: number,
+  width: number,
+  fontSize: number,
+  tb: TextBlock
+): TextBox {
+  const anchor =
+    (align === "center" ? width / 2 : align === "right" ? width - 24 : 24) +
+    textOffsetX;
+  const w = Math.max(24, Math.min(fontSize * 1.5, width));
+  const left = Math.min(Math.max(0, anchor - w / 2), Math.max(0, width - w));
+  return { left, top: tb.top, width: w, height: tb.height };
 }
 
 function alignItemsFor(v: VAlign): string {
@@ -112,6 +87,12 @@ export function PreviewStage() {
   const [previewW, setPreviewW] = useState(800);
   const [editing, setEditing] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(true);
+  // Measured bounding box of the text (canvas px) — the edit frame hugs the
+  // text itself instead of spanning the full canvas width.
+  const [textBox, setTextBox] = useState<TextBox | null>(null);
+  const [snapGuide, setSnapGuide] = useState(false);
+  const measureRaf = useRef(0);
+  const wasEditingRef = useRef(false);
 
   const fontLoaded = useStudio((s) => s.fontLoaded);
   const canvasWidth = useStudio((s) => s.canvasWidth);
@@ -124,6 +105,9 @@ export function PreviewStage() {
   const textDirection = useStudio((s) => s.textDirection);
   const axes = useStudio((s) => s.axes);
   const setText = useStudio((s) => s.setText);
+  const align = useStudio((s) => s.align);
+  const snapCenterEnabled = useStudio((s) => s.snapCenterEnabled);
+  const setSnapCenterEnabled = useStudio((s) => s.setSnapCenterEnabled);
 
   const overlayEnabled = useStudio((s) => s.overlayEnabled);
   const overlayShowSliders = useStudio((s) => s.overlayShowSliders);
@@ -148,12 +132,97 @@ export function PreviewStage() {
   const overlayTextGap = useStudio((s) => s.overlayTextGap);
   const overlayThumbScale = useStudio((s) => s.overlayThumbScale);
   const overlayThumbShape = useStudio((s) => s.overlayThumbShape);
+  const overlayAxisGap = useStudio((s) => s.overlayAxisGap);
+  // Drag offsets — subscribed so dragging the frames re-renders live.
+  const textOffsetX = useStudio((s) => s.textOffsetX);
+  const textOffsetY = useStudio((s) => s.textOffsetY);
+  const panelOffsetX = useStudio((s) => s.panelOffsetX);
+  const panelOffsetY = useStudio((s) => s.panelOffsetY);
 
   const registerRow = useCallback((tag: string, refs: SliderRefs) => {
     rowRefs.current.set(tag, refs);
   }, []);
   const unregisterRow = useCallback((tag: string) => {
     rowRefs.current.delete(tag);
+  }, []);
+
+  // Measure the rendered text and store its canvas-px bounding box so the
+  // edit frame hugs the text itself. Uses a DOM Range over the editable
+  // element — the same glyphs, direction and letter-spacing the export uses.
+  const measureTextBox = useCallback(() => {
+    const el = textRef.current;
+    const wrap = wrapperRef.current;
+    if (!el || !wrap) return;
+    const s = useStudio.getState();
+    if (!s.fontLoaded) {
+      setTextBox(null);
+      return;
+    }
+    const kw = previewW / s.canvasWidth;
+    if (!(kw > 0) || !Number.isFinite(kw)) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects()).filter(
+      (r) => r.width >= 0.5 && r.height >= 0.5
+    );
+    let box: TextBox;
+    if (rects.length > 0) {
+      const left = Math.min(...rects.map((r) => r.left));
+      const top = Math.min(...rects.map((r) => r.top));
+      const right = Math.max(...rects.map((r) => r.right));
+      const bottom = Math.max(...rects.map((r) => r.bottom));
+      box = {
+        left: (left - wrapRect.left) / kw,
+        top: (top - wrapRect.top) / kw,
+        width: (right - left) / kw,
+        height: (bottom - top) / kw,
+      };
+    } else {
+      box = fallbackTextBox(
+        s.align,
+        s.textOffsetX,
+        s.canvasWidth,
+        s.fontSize,
+        textBlockFor(s)
+      );
+    }
+    if (
+      ![box.left, box.top, box.width, box.height].every((v) =>
+        Number.isFinite(v)
+      )
+    ) {
+      return;
+    }
+    box.width = Math.max(8, box.width);
+    box.height = Math.max(8, box.height);
+    setTextBox((prev) => {
+      const same =
+        prev &&
+        Math.abs(prev.left - box.left) < 0.75 &&
+        Math.abs(prev.top - box.top) < 0.75 &&
+        Math.abs(prev.width - box.width) < 0.75 &&
+        Math.abs(prev.height - box.height) < 0.75;
+      return same ? prev : box;
+    });
+  }, [previewW]);
+
+  // Throttled to one measurement per animation frame and skipped while the
+  // animation is playing, so the per-frame style applier never triggers
+  // React re-renders.
+  const scheduleMeasure = useCallback(() => {
+    if (useStudio.getState().isPlaying) return;
+    if (measureRaf.current) return;
+    measureRaf.current = requestAnimationFrame(() => {
+      measureRaf.current = 0;
+      measureTextBox();
+    });
+  }, [measureTextBox]);
+
+  useEffect(() => {
+    return () => {
+      if (measureRaf.current) cancelAnimationFrame(measureRaf.current);
+    };
   }, []);
 
   const applyStyles = useCallback(() => {
@@ -170,8 +239,13 @@ export function PreviewStage() {
     el.style.letterSpacing = `${s.letterSpacing * k}px`;
     el.style.lineHeight = String(s.lineHeight);
     el.style.textAlign = s.align;
-    el.style.whiteSpace = "pre-wrap";
-    el.style.wordBreak = "break-word";
+    // "pre" (not pre-wrap): the SVG export renderer never wraps lines and
+    // preserves every space (xml:space="preserve"), so the preview must not
+    // wrap or collapse whitespace either — this is what keeps the export
+    // pixel-faithful to the preview.
+    el.style.whiteSpace = "pre";
+    // Direct-manipulation drag offset (v1.1), mirrored by the SVG renderer.
+    el.style.transform = `translate(${s.textOffsetX * k}px, ${s.textOffsetY * k}px)`;
     // Base text direction. "auto" clears the inline style so the dir=auto
     // attribute decides (first-strong rule); explicit values are forced.
     // Resolved with the same rule as the SVG export so both always match.
@@ -222,7 +296,11 @@ export function PreviewStage() {
     if (cssEl) {
       cssEl.textContent = `font-variation-settings: ${selectCurrentCssVariation(s)};`;
     }
-  }, [previewW]);
+
+    // The text frame hugs the text, so re-measure whenever anything that
+    // affects glyph advances changed (variation, size, spacing, text…).
+    scheduleMeasure();
+  }, [previewW, scheduleMeasure]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -272,6 +350,11 @@ export function PreviewStage() {
     if (clean !== useStudio.getState().text) setText(clean);
   }, [setText]);
 
+  const exitEdit = useCallback(() => {
+    // Blur runs handleBlur: trailing-newline cleanup + editing=false.
+    textRef.current?.blur();
+  }, []);
+
   const handlePaste = useCallback(
     (e: ClipboardEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -291,6 +374,8 @@ export function PreviewStage() {
     overlayCfgFrom(useStudio.getState()),
     tb
   );
+  const effBox =
+    textBox ?? fallbackTextBox(align, textOffsetX, canvasWidth, fontSize, tb);
   const showSliders =
     overlayEnabled && overlayShowSliders && axes.length > 0;
   const showCssBar = overlayEnabled && overlayShowCss;
@@ -338,6 +423,21 @@ export function PreviewStage() {
             <Pencil className="size-2.5" />
             click text to edit
           </span>
+          <button
+            type="button"
+            title="Snap to width center while dragging"
+            aria-label="Snap to width center"
+            aria-pressed={snapCenterEnabled}
+            onClick={() => setSnapCenterEnabled(!snapCenterEnabled)}
+            className={cn(
+              "flex size-6 items-center justify-center rounded-md border transition-colors",
+              snapCenterEnabled
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-background text-muted-foreground hover:bg-muted"
+            )}
+          >
+            <Magnet className="size-3" />
+          </button>
           <Maximize2 className="size-3" />
           {canvasWidth} × {canvasHeight}
         </div>
@@ -368,8 +468,28 @@ export function PreviewStage() {
             paddingTop: 24 * k,
             paddingBottom: 24 * k,
           }}
-          onClick={() => {
-            if (fontLoaded) textRef.current?.focus();
+          onPointerDownCapture={() => {
+            // Record the edit state BEFORE the native mousedown blur, so the
+            // click handler below can tell "exit edit" from "start edit".
+            wasEditingRef.current = editing;
+          }}
+          onClick={(e) => {
+            if (!fontLoaded) return;
+            // Clicks on the text itself are native caret handling.
+            if (
+              textRef.current &&
+              e.target instanceof Node &&
+              textRef.current.contains(e.target)
+            ) {
+              return;
+            }
+            if (wasEditingRef.current) {
+              // Clicking elsewhere inside the preview exits edit mode.
+              wasEditingRef.current = false;
+              exitEdit();
+              return;
+            }
+            textRef.current?.focus();
           }}
         >
           {fontLoaded ? (
@@ -385,7 +505,16 @@ export function PreviewStage() {
               }}
               onInput={handleInput}
               onBlur={handleBlur}
+              onFocus={() => setEditing(true)}
               onPaste={handlePaste}
+              onKeyDown={(e) => {
+                // Esc leaves in-place editing (blur runs the same cleanup).
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  exitEdit();
+                }
+              }}
             />
           ) : (
             <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
@@ -417,10 +546,25 @@ export function PreviewStage() {
           </div>
         )}
 
-        {/* Axis slider overlay — mirrors the baked SVG geometry */}
+        {/* Axis slider overlay — mirrors the baked SVG geometry. The panel
+            body is directly draggable (v1.1); the drag delta is stored as a
+            canvas-px offset that the SVG export renderer applies too. */}
         {showSliders && (
           <div
-            className="pointer-events-none absolute"
+            className="absolute cursor-grab touch-none select-none active:cursor-grabbing"
+            title="Drag to move the sliders · double-click to reset"
+            onPointerDown={(e) =>
+              dragPanel(e, {
+                k,
+                width: canvasWidth,
+                height: canvasHeight,
+                m,
+                onSnap: setSnapGuide,
+              })
+            }
+            onDoubleClick={() =>
+              useStudio.getState().setPanelOffset(0, 0)
+            }
             style={{
               left: m.panelX * k,
               top: m.panelY * k,
@@ -456,11 +600,24 @@ export function PreviewStage() {
           </div>
         )}
 
-        {/* CSS code line */}
+        {/* CSS code line — draggable like the slider panel */}
         {showCssBar && (
           <div
             ref={cssRef}
-            className="pointer-events-none absolute overflow-hidden whitespace-nowrap"
+            className="absolute cursor-grab touch-none select-none overflow-hidden whitespace-nowrap active:cursor-grabbing"
+            title="Drag to move the CSS line · double-click to reset"
+            onPointerDown={(e) =>
+              dragPanel(e, {
+                k,
+                width: canvasWidth,
+                height: canvasHeight,
+                m,
+                onSnap: setSnapGuide,
+              })
+            }
+            onDoubleClick={() =>
+              useStudio.getState().setPanelOffset(0, 0)
+            }
             style={{
               left: m.cssBarX * k,
               top: m.cssBarY * k,
@@ -477,6 +634,39 @@ export function PreviewStage() {
               paddingLeft: overlayCentered ? 0 : m.innerPad * k,
               paddingRight: overlayCentered ? 0 : m.innerPad * k,
             }}
+          />
+        )}
+
+        {/* Direct-manipulation frames & handles (v1.1) — hidden while the
+            text is being edited so the caret interactions stay untouched,
+            and when the toolbar is hidden for a clean preview. */}
+        {fontLoaded && toolbarVisible && !editing && (
+          <EditChrome
+            box={effBox}
+            m={m}
+            k={k}
+            width={canvasWidth}
+            height={canvasHeight}
+            showPanel={showSliders}
+            showCss={showCssBar}
+            axesCount={axes.length}
+            lineCount={Math.max(1, text.split("\n").length)}
+            onSnap={setSnapGuide}
+          />
+        )}
+
+        {/* Snap guide — vertical dashed line at the canvas width centre,
+            shown while a dragged element is magnetised to it. */}
+        {snapGuide && (
+          <div
+            className="pointer-events-none absolute inset-y-0 z-10 w-px"
+            style={{
+              left: `${(canvasWidth / 2) * k}px`,
+              backgroundImage:
+                "linear-gradient(to bottom, rgba(125,125,125,0.95) 50%, rgba(255,255,255,0.9) 50%)",
+              backgroundSize: "1px 7px",
+            }}
+            aria-hidden
           />
         )}
 

@@ -16,6 +16,9 @@ export function PlaybackEngine() {
     if (!isPlaying) return;
     const state = useStudio.getState();
     const durMs = state.duration * 1000;
+    // "Once" mode plays `repeat` full cycles back to back (matching the
+    // export); loop/ping-pong keep looping live as always.
+    const reps = Math.max(1, Math.round(state.repeat));
     const startWall = performance.now();
     // Account for resuming from a non-zero position.
     const startTime = startWall - state.currentTime * durMs;
@@ -38,7 +41,7 @@ export function PlaybackEngine() {
       const t = (elapsed % d) / d;
       s.setCurrentTime(t);
 
-      if (s.loopMode === "once" && elapsed >= d) {
+      if (s.loopMode === "once" && elapsed >= d * reps) {
         s.setCurrentTime(1);
         s.pause();
         return;

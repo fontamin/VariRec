@@ -4,7 +4,7 @@
 browser. Drop in any variable font, animate its axes, and record the result as
 **GIF**, **MP4** or **WebM** — no server, no upload, no install.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with Z.ai](https://img.shields.io/badge/built_with-Z.ai-blueviolet)
 
@@ -28,7 +28,9 @@ happens locally in your browser, so your fonts never leave your device.
   - *Binary* — axes count through a binary sequence (00 → 01 → 10 → 11 …).
 - **8 easing curves** — Linear, Ease In-Out, Ease In, Ease Out, Sine,
   Exponential, Bounce, Elastic.
-- **Playback modes** — Once, Loop and Ping-pong, with duration and FPS control.
+- **Playback modes** — Once, Loop and Ping-pong, with duration, FPS and a
+  **Repeat** count that tiles the cycle into the export (video length =
+  Duration × Repeat).
 - **Baked-in axis-slider overlay** (fully customizable, rendered into the export):
   - thumb shape (circle / square / rounded / diamond), thumb size and
     track length (20–100% of the canvas width);
@@ -37,8 +39,23 @@ happens locally in your browser, so your fonts never leave your device.
     decimals (0–3) so centered text never jitters;
   - a live CSS `font-variation-settings` snippet with the current values;
   - position above/below the text, panel scale, and a "gap to text" of up to 12 em.
-- **Text styling** — size, line height, letter spacing, horizontal/vertical
-  alignment, LTR / RTL / auto direction, text & background colors.
+- **Direct manipulation on the canvas** — every overlay element lives in a
+  frame you can grab: drag the text block or the slider stack to reposition
+  them, scale the font size from the frame's corner handle, tune the line
+  height from its bottom handle, resize the panel and track from its handles,
+  and drag the dedicated gap handles sitting exactly between the text and the
+  sliders, between slider rows, between a row's name and its track, and
+  between the sliders and the CSS line. Double-click a frame to snap it back
+  to its automatic position. A magnet button above the preview toggles **snap
+  to width centre**, so a dragged frame's centre clings to the canvas's
+  horizontal midline.
+- **WYSIWYG text fidelity** — runs of spaces and leading/trailing spaces are
+  preserved exactly as typed in both the preview and the export, and the
+  preview never wraps lines the export wouldn't.
+- **Text styling** — size (12–2000 px), line height, letter spacing,
+  horizontal/vertical alignment, text & background colors, and a base direction
+  of LTR / RTL / auto — *auto* picks RTL the moment your text starts with an
+  Arabic, Persian or Hebrew letter, in both the preview and the export.
 - **Canvas control** — presets (16:9, 1:1, 4:3, 9:16, 21:9) or any custom size
   between 64 and 2560 px, applied through a confirm button so the layout never
   jumps while you type.
@@ -71,18 +88,23 @@ No variable font at hand? `public/test-vf.ttf` is a tiny sample font with
 1. **Load a font** — drag & drop a `.ttf` / `.otf` / `.woff` / `.woff2` file
    onto the drop zone (or click it). Its variation axes appear in the right
    panel.
-2. **Type your text** — in the *Text* tool of the preview toolbar, or click the
-   text directly on the canvas.
-3. **Pick axes** — toggle the switch on each axis to include it in the
+2. **Type your text** — click the text directly on the canvas and just type;
+   the direction switches to RTL automatically when you write Persian or
+   Arabic.
+3. **Arrange by hand** — drag the frames on the canvas to move the text and
+   the sliders; use the handles to change font size, line height, panel size,
+   track length and every gap. Double-click a frame to reset it.
+4. **Pick axes** — toggle the switch on each axis to include it in the
    animation; use the live slider of an axis to keep it at a fixed value.
-4. **Choose the motion** — pick *Sync* or *Binary* mode, an easing curve, a
+5. **Choose the motion** — pick *Sync* or *Binary* mode, an easing curve, a
    playback mode (Once / Loop / Ping-pong), the duration and the frame rate.
-5. **Style the overlay** — open the sliders tool (SlidersHorizontal icon) in
+6. **Style the overlay** — open the sliders tool (SlidersHorizontal icon) in
    the preview toolbar to configure thumbs, labels, decimals, the CSS snippet,
-   fonts, colors, gaps and track length.
-6. **Fine-tune the canvas** — resize the canvas via presets or the custom size
+   fonts, colors, gaps and track length — or just drag the handles on the
+   canvas.
+7. **Fine-tune the canvas** — resize the canvas via presets or the custom size
    input (press *Apply size* to confirm).
-7. **Export** — open the record panel and render a GIF, MP4 or WebM. Some
+8. **Export** — open the record panel and render a GIF, MP4 or WebM. Some
    combinations are intentionally GIF-only (ping-pong and multi-axis Binary
    loops) — the UI tells you why and offers the switch.
 
@@ -136,7 +158,8 @@ nothing is ever uploaded to a server.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). Release history lives in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 

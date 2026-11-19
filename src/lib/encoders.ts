@@ -26,6 +26,7 @@ export interface RecorderOptions {
   height: number;
   fps: number;
   duration: number; // seconds (one forward pass)
+  repeat: number; // how many cycles are tiled into the exported clip (1 = single cycle)
   loopMode: LoopMode;
   onProgress: (p: number) => void;
   getRenderConfig: (progress: number) => RenderConfig;
@@ -71,28 +72,43 @@ function yieldToUi(): Promise<void> {
 }
 
 // Build the normalised-progress sequence (0..1) for each frame, taking the
-// loop mode and output format into account.
+// loop mode, output format and repeat count into account. `repeat` tiles the
+// single-cycle sequence that many times, so MP4/WebM length becomes
+// Duration × Repeat (× 2 again in Loop mode, whose cycle is a seamless
+// ping-pong). GIF repeats natively via its loop flag, so there `repeat`
+// only applies in "once" mode (the GIF plays the cycle N times, then stops) —
+// tiling identical cycles into an already-looping GIF would just bloat it.
 export function computeProgressSequence(
   loopMode: LoopMode,
   format: VideoFormat,
   fps: number,
-  duration: number
+  duration: number,
+  repeat = 1
 ): number[] {
   const n = Math.max(1, Math.round(duration * fps));
   const fwd = n === 1 ? [0] : Array.from({ length: n }, (_, i) => i / (n - 1));
+  const pingpong = [...fwd, ...fwd.slice().reverse().slice(1)];
 
-  if (loopMode === "once") return fwd;
-
-  if (format === "gif") {
+  let base: number[];
+  if (loopMode === "once") {
+    base = fwd;
+  } else if (format === "gif") {
     // GIF: "loop" = single forward pass (GIF native loop flag makes it repeat).
     // "pingpong" = 0→1→0 so the looping GIF bounces back and forth seamlessly.
-    if (loopMode === "loop") return fwd;
-    return [...fwd, ...fwd.slice().reverse().slice(1)];
+    base = loopMode === "loop" ? fwd : pingpong;
+  } else {
+    // MP4 / WebM: "loop" = ping-pong (0→1→0) for a seamless looping video.
+    // Duration doubles because we render forward + backward.
+    base = pingpong;
   }
 
-  // MP4 / WebM: "loop" = ping-pong (0→1→0) for a seamless looping video.
-  // Duration doubles because we render forward + backward.
-  return [...fwd, ...fwd.slice().reverse().slice(1)];
+  const reps =
+    format === "gif" && loopMode !== "once"
+      ? 1
+      : Math.max(1, Math.round(repeat));
+  const sequence: number[] = [];
+  for (let i = 0; i < reps; i++) sequence.push(...base);
+  return sequence;
 }
 
 async function pickAvcCodec(
@@ -177,7 +193,8 @@ export async function encodeGif(opts: RecorderOptions): Promise<Blob> {
     opts.loopMode,
     "gif",
     actualFps,
-    opts.duration
+    opts.duration,
+    opts.repeat
   );
   const total = sequence.length;
 
@@ -229,7 +246,8 @@ async function encodeWebCodecs(
     opts.loopMode,
     format,
     opts.fps,
-    opts.duration
+    opts.duration,
+    opts.repeat
   );
   const total = sequence.length;
 

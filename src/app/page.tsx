@@ -30,7 +30,7 @@ export default function Home() {
               <h1 className="flex items-center gap-1.5 text-sm font-bold tracking-tight">
                 VariRec
                 <span className="rounded-full border bg-muted/60 px-1.5 py-px text-[9px] font-medium leading-none text-muted-foreground">
-                  v1.0
+                  v1.1
                 </span>
               </h1>
               <p className="hidden text-[11px] text-muted-foreground sm:block">
@@ -129,7 +129,7 @@ export default function Home() {
       <footer className="mt-auto border-t bg-background/80">
         <div className="mx-auto flex max-w-[1500px] flex-col items-center justify-between gap-1.5 px-4 py-2.5 text-[11px] text-muted-foreground sm:flex-row sm:px-6">
           <p>
-            VariRec v1.0 · MIT License · fonts are parsed and rendered entirely
+            VariRec v1.1 · MIT License · fonts are parsed and rendered entirely
             in your browser — nothing is uploaded.
           </p>
           <p className="flex items-center gap-1.5">

@@ -33,6 +33,7 @@ export function RecordPanel() {
   const loopMode = useStudio((s) => s.loopMode);
   const axisMoveMode = useStudio((s) => s.axisMoveMode);
   const duration = useStudio((s) => s.duration);
+  const repeat = useStudio((s) => s.repeat);
   const record = useStudio((s) => s.record);
   const cancelRecording = useStudio((s) => s.cancelRecording);
   const clearExport = useStudio((s) => s.clearExport);
@@ -48,6 +49,7 @@ export function RecordPanel() {
   const animatingCount = axes.filter((a) => a.animate).length;
   const hasMotion = animatingCount > 0;
   const pingpong = loopMode === "pingpong";
+  const reps = Math.max(1, Math.round(repeat));
 
   // GIF delays are stored in 1/100 s steps (and nothing below 2cs survives
   // the browser), so the exported GIF can play at a different rate than the
@@ -64,9 +66,10 @@ export function RecordPanel() {
     loopMode === "loop" && axisMoveMode === "binary" && animatingCount > 1;
   const videoOk = wcSupported && !pingpong && !binaryMultiLoop;
 
-  // Video formats (MP4/WebM) double the duration in loop mode (ping-pong render).
+  // Video formats (MP4/WebM) double the duration in loop mode (ping-pong
+  // render) and tile the cycle `repeat` times.
   const videoDurationMult = loopMode === "loop" ? 2 : 1;
-  const videoDuration = (duration * videoDurationMult).toFixed(1);
+  const videoDuration = (duration * videoDurationMult * reps).toFixed(1);
 
   const videoDesc = !wcSupported
     ? "Needs Chrome"
@@ -80,7 +83,17 @@ export function RecordPanel() {
     {
       value: "gif",
       label: "GIF",
-      desc: `${pingpong ? "Ping-pong loop" : loopMode === "loop" ? "Loop" : "Single"} · ${gifFpsLabel} fps`,
+      desc: [
+        pingpong
+          ? "Ping-pong loop"
+          : loopMode === "loop"
+            ? "Loop"
+            : "Single",
+        loopMode === "once" && reps > 1 ? `${reps}×` : null,
+        `${gifFpsLabel} fps`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       icon: FileImage,
       available: true,
     },

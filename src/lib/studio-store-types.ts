@@ -11,6 +11,12 @@ export type ThumbShape = "circle" | "square" | "rounded" | "diamond";
 // the first strong character (same rule as HTML dir="auto").
 export type TextDirection = "auto" | "ltr" | "rtl";
 
+// Text font size range (px). Shared by every size control — the preview
+// toolbar slider, the side-panel slider and the frame's corner resize handle —
+// and by the store clamp, so they can never drift apart.
+export const FONT_SIZE_MIN = 12;
+export const FONT_SIZE_MAX = 2000;
+
 // How animated axes move through time:
 // - "binary": animated axes count through a binary sequence — the topmost
 //   animated axis is the least significant bit; N axes cycle through 2^N

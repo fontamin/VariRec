@@ -3,6 +3,7 @@
 import { Type, Palette, Square } from "lucide-react";
 import { useStudio } from "@/lib/studio-store";
 import type { AlignMode } from "@/lib/studio-store-types";
+import { FONT_SIZE_MAX } from "@/lib/studio-store-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -84,7 +85,7 @@ export function TypographyPanel() {
           <Slider
             value={[fontSize]}
             min={12}
-            max={400}
+            max={FONT_SIZE_MAX}
             step={1}
             onValueChange={(v) => setFontSize(v[0] ?? 100)}
           />

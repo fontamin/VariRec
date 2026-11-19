@@ -26,11 +26,18 @@ export function AnimationPanel() {
   const fps = useStudio((s) => s.fps);
   const easing = useStudio((s) => s.easing);
   const loopMode = useStudio((s) => s.loopMode);
+  const repeat = useStudio((s) => s.repeat);
 
   const setDuration = useStudio((s) => s.setDuration);
   const setFps = useStudio((s) => s.setFps);
   const setEasing = useStudio((s) => s.setEasing);
   const setLoopMode = useStudio((s) => s.setLoopMode);
+  const setRepeat = useStudio((s) => s.setRepeat);
+
+  const reps = Math.max(1, Math.round(repeat));
+  // MP4/WebM tile the cycle `repeat` times (and Loop mode renders a seamless
+  // ping-pong, doubling the length) — the same math the encoders apply.
+  const videoTotal = duration * (loopMode === "loop" ? 2 : 1) * reps;
 
   return (
     <Card className="gap-0 py-0">
@@ -120,6 +127,41 @@ export function AnimationPanel() {
             </ToggleGroup>
           </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px]">Repeat</Label>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {reps}×
+              </span>
+            </div>
+            <Slider
+              value={[reps]}
+              min={1}
+              max={20}
+              step={1}
+              onValueChange={(v) => setRepeat(Math.round(v[0] ?? 1))}
+              aria-label="Repeat count"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Video length</Label>
+            <div
+              className="flex h-7 items-center rounded-md border bg-muted/40 px-2 font-mono text-[11px] text-muted-foreground"
+              aria-live="polite"
+            >
+              {videoTotal.toFixed(1)}s
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          Repeat tiles the animation cycle into the export: video length =
+          Duration × Repeat (doubled again in Loop mode for a seamless
+          ping-pong). GIF loops natively, so Repeat applies to it only in Once
+          mode.
+        </p>
 
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           Typography, colors, canvas size and the axis-slider overlay are
