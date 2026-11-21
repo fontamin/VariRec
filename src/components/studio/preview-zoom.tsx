@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 // Preview zoom mode: the two Fit modes auto-scale the stage into the
-// available space (column width / remaining screen height); a number
+// available space (column width / available height); a number
 // renders the canvas at exactly that multiple of its natural pixel size.
 // Preview-only — the export always renders at the full canvas resolution.
 export type ZoomMode = "fit-width" | "fit-height" | number;
@@ -104,7 +104,7 @@ export function PreviewZoomControl({
           <ZoomOption
             active={mode === "fit-height"}
             label="Fit H"
-            hint="fills the screen height"
+            hint="fills the height"
             onClick={() => {
               onChange("fit-height");
               setOpen(false);

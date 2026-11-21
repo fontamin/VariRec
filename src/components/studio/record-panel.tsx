@@ -135,7 +135,7 @@ export function RecordPanel() {
   };
 
   return (
-    <Card className="gap-0 py-0">
+    <Card className="shrink-0 gap-0 py-0">
       <CardHeader className="border-b px-3 py-2.5">
         <CardTitle className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-2">

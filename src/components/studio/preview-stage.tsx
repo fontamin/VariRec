@@ -10,7 +10,8 @@ import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Type, Maximize2, Pencil, EyeOff, Settings2, Magnet } from "lucide-react";
+import { Type, Pencil, EyeOff, Settings2, Magnet } from "lucide-react";
+import { CanvasSizeButton } from "./canvas-size-button";
 import {
   REGISTERED_FAMILY,
   selectCurrentVariation,
@@ -578,23 +579,29 @@ export function PreviewStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Measure the space the Fit modes zoom into: the column width and the
-  // remaining SCREEN height below the stage. Height uses the stage's
-  // DOCUMENT offset (scroll-invariant — the live viewport position changes
-  // while scrolling, the space the preview may occupy does not). Zooms
-  // bigger than this space simply let the stage card grow in the page flow
-  // (no inner scroll box) — these numbers only define the two Fit scales.
+  // Measure the space the Fit modes zoom into. On the desktop app shell
+  // (lg+) the stage area is a bounded flex box — its measured client box IS
+  // the space Fit H fills (the panels below stay visible). Below lg the page
+  // flows normally, so height falls back to the remaining SCREEN height
+  // below the stage (document-offset based, scroll-invariant). Zooms bigger
+  // than this space scroll inside the stage area on lg (and grow the page
+  // below lg) — these numbers only define the two Fit scales.
   useEffect(() => {
     const compute = () => {
       const el = stageAreaRef.current;
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const docTop = rect.top + window.scrollY;
-      const h = Math.max(
-        160,
-        Math.floor(window.innerHeight - docTop - 12)
-      );
       const w = el.clientWidth;
+      const lg = window.matchMedia("(min-width: 1024px)").matches;
+      const h = lg
+        ? Math.max(120, Math.floor(el.clientHeight))
+        : Math.max(
+            160,
+            Math.floor(
+              window.innerHeight -
+                (el.getBoundingClientRect().top + window.scrollY) -
+                12
+            )
+          );
       const prev = fitAvailRef.current;
       if (prev && Math.abs(prev.w - w) < 0.5 && Math.abs(prev.h - h) < 0.5)
         return;
@@ -606,12 +613,17 @@ export function PreviewStage() {
     const ro = new ResizeObserver(compute);
     if (stageAreaRef.current) ro.observe(stageAreaRef.current);
     window.addEventListener("resize", compute);
+    // Re-measure when the layout flips between the app shell (lg) and the
+    // flowing page below it.
+    const mq = window.matchMedia("(min-width: 1024px)");
+    mq.addEventListener("change", compute);
     // Late re-measures: fonts / panels below settle after the first paint.
     const t1 = window.setTimeout(compute, 250);
     const t2 = window.setTimeout(compute, 900);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", compute);
+      mq.removeEventListener("change", compute);
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
@@ -874,8 +886,8 @@ export function PreviewStage() {
     scoreBottom < toolbarBand ? scoreTop > scoreBottom : false;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
+    <div className="flex min-h-0 flex-col space-y-2 lg:flex-1">
+      <div className="flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-medium">
           <Type className="size-3.5 text-muted-foreground" />
           Preview
@@ -905,21 +917,22 @@ export function PreviewStage() {
             effective={zoom}
             onChange={setZoomMode}
           />
-          <Maximize2 className="size-3" />
-          {canvasWidth} × {canvasHeight}
+          <CanvasSizeButton />
         </div>
       </div>
 
       {/* Stage area — the card keeps the canvas' exact aspect at any zoom.
-          There is NO inner scroll box: zooms smaller than the space centre
-          the card (mx-auto), bigger ones let the card grow past the column
-          in the normal page flow (the left edge stays pinned and the page
-          itself scrolls to reach the rest — CSS auto margins resolve to 0
-          when a box overflows its container). */}
-      <div ref={stageAreaRef} className="w-full">
+          On the desktop shell the area is a bounded flex box: Fit modes size
+          the card INTO it (auto margins centre a smaller card), while an
+          explicit zoom bigger than the area scrolls inside it. Below lg the
+          card grows in the normal page flow. */}
+      <div
+        ref={stageAreaRef}
+        className="flex w-full flex-col lg:min-h-[120px] lg:flex-1 lg:overflow-auto"
+      >
         <div
           className={cn(
-            "relative z-10 mx-auto overflow-hidden rounded-lg border bg-muted/40 ring-1 ring-inset ring-black/[0.03]",
+            "relative z-10 mx-auto my-auto shrink-0 overflow-hidden rounded-lg border bg-muted/40 ring-1 ring-inset ring-black/[0.03]",
             fontLoaded ? "shadow-sm" : ""
           )}
           style={{ width: stageW, height: stageH }}

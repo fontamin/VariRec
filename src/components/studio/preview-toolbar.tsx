@@ -15,11 +15,10 @@
  * to the top so it never covers it, and vice versa.
  */
 
-import { useMemo, type ComponentType, type ReactNode } from "react";
+import { useMemo, useState, type ComponentType, type ReactNode } from "react";
 import {
   Type,
   Palette,
-  Maximize2,
   SlidersHorizontal,
   ArrowLeftRight,
   ArrowUpToLine,
@@ -28,6 +27,7 @@ import {
   Spline,
   Code,
   GripVertical,
+  ChevronDown,
 } from "lucide-react";
 import {
   DndContext,
@@ -81,16 +81,8 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
-import { CanvasSizeInput } from "./canvas-size-input";
+import { deriveCurveColors } from "@/lib/theme-color";
 import { ColorRow } from "./color-field";
-
-const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
-  { label: "16:9", w: 960, h: 540 },
-  { label: "1:1", w: 720, h: 720 },
-  { label: "4:3", w: 960, h: 720 },
-  { label: "9:16", w: 432, h: 768 },
-  { label: "21:9", w: 1050, h: 450 },
-];
 
 export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
   // Grouped store subscriptions (useShallow) instead of ~70 individual
@@ -135,7 +127,6 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
     setTextDirection,
     setTextColor,
     setBgColor,
-    setCanvasSize,
   } = useStudio(
     useShallow((s) => ({
       setOverlay: s.setOverlay,
@@ -147,9 +138,20 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
       setTextDirection: s.setTextDirection,
       setTextColor: s.setTextColor,
       setBgColor: s.setBgColor,
-      setCanvasSize: s.setCanvasSize,
     }))
   );
+
+  // The glyph-outline curve palette is driven by ONE accent color: the
+  // outline stroke and anchor fill take the pick, the borders take its
+  // opposite, the control fill gets a shade and the handles a muted tone
+  // (see deriveCurveColors). "More…" reveals the per-color pickers for
+  // manual fine-tuning. Text and page colors stay independent.
+  const [curveAccent, setCurveAccent] = useState(() => outline.strokeColor);
+  const [moreCurveColors, setMoreCurveColors] = useState(false);
+  const applyCurveTheme = (v: string) => {
+    setCurveAccent(v);
+    setOutline(deriveCurveColors(v));
+  };
 
   // Overlay metrics mirror the renderer exactly, so the Row gap ceiling
   // follows the canvas height: the gap may grow until the slider stack
@@ -352,38 +354,79 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                 value={outline.nodeShape}
                 onChange={(v) => setOutline({ nodeShape: v })}
               />
-              <div className="grid grid-cols-2 gap-2 border-t pt-2">
-                <ColorRow
-                  label="Outline color"
-                  value={outline.strokeColor}
-                  onChange={(v) => setOutline({ strokeColor: v })}
-                />
-                <ColorRow
-                  label="Handle color"
-                  value={outline.handleColor}
-                  onChange={(v) => setOutline({ handleColor: v })}
-                />
-                <ColorRow
-                  label="Anchor fill"
-                  value={outline.anchorFill}
-                  onChange={(v) => setOutline({ anchorFill: v })}
-                />
-                <ColorRow
-                  label="Anchor border"
-                  value={outline.anchorStroke}
-                  onChange={(v) => setOutline({ anchorStroke: v })}
-                />
-                <ColorRow
-                  label="Control fill"
-                  value={outline.ctrlFill}
-                  onChange={(v) => setOutline({ ctrlFill: v })}
-                />
-                <ColorRow
-                  label="Control border"
-                  value={outline.ctrlStroke}
-                  onChange={(v) => setOutline({ ctrlStroke: v })}
-                />
+              {/* One curve accent drives the six curve colors (see
+                  deriveCurveColors): outline + anchor fill take the pick,
+                  borders take its opposite, the control fill a shade and the
+                  handles a muted tone. "More…" opens the per-color pickers. */}
+              <div className="flex items-end gap-2 border-t pt-2">
+                <div className="min-w-0 flex-1">
+                  <ColorRow
+                    label="Curve color"
+                    value={curveAccent}
+                    onChange={applyCurveTheme}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+                  aria-expanded={moreCurveColors}
+                  onClick={() => setMoreCurveColors((v) => !v)}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "size-3 transition-transform",
+                      moreCurveColors && "rotate-180"
+                    )}
+                  />
+                  More…
+                </Button>
               </div>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                One color drives the whole curve palette — outline, anchors,
+                control points and handles derive from this pick.
+              </p>
+
+              {moreCurveColors && (
+                <div className="space-y-2 border-t pt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <ColorRow
+                      label="Outline color"
+                      value={outline.strokeColor}
+                      onChange={(v) => setOutline({ strokeColor: v })}
+                    />
+                    <ColorRow
+                      label="Handle color"
+                      value={outline.handleColor}
+                      onChange={(v) => setOutline({ handleColor: v })}
+                    />
+                    <ColorRow
+                      label="Anchor fill"
+                      value={outline.anchorFill}
+                      onChange={(v) => setOutline({ anchorFill: v })}
+                    />
+                    <ColorRow
+                      label="Anchor border"
+                      value={outline.anchorStroke}
+                      onChange={(v) => setOutline({ anchorStroke: v })}
+                    />
+                    <ColorRow
+                      label="Control fill"
+                      value={outline.ctrlFill}
+                      onChange={(v) => setOutline({ ctrlFill: v })}
+                    />
+                    <ColorRow
+                      label="Control border"
+                      value={outline.ctrlStroke}
+                      onChange={(v) => setOutline({ ctrlStroke: v })}
+                    />
+                  </div>
+                  <p className="text-[10px] leading-snug text-muted-foreground">
+                    Manual tweaks stick until the next pick of the curve
+                    color, which re-derives them all.
+                  </p>
+                </div>
+              )}
               <SlideRow
                 label="Handle width"
                 value={outline.handleWidth}
@@ -395,34 +438,6 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
               />
             </>
           )}
-        </Tool>
-
-        <Tool icon={Maximize2} title="Canvas size" contentClassName="w-72">
-          {/* Typed sizes commit only on "Apply size" (or Enter) — see
-              CanvasSizeInput. Preset chips below stay one-click instant. */}
-          <CanvasSizeInput />
-          <div className="flex flex-wrap gap-1">
-            {CANVAS_PRESETS.map((p) => {
-              const active = p.w === canvasWidth && p.h === canvasHeight;
-              return (
-                <button
-                  key={p.label}
-                  onClick={() => setCanvasSize(p.w, p.h)}
-                  className={cn(
-                    "rounded border px-1.5 py-0.5 text-[11px] transition-colors",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  {p.label}
-                  <span className="ml-1 opacity-60">
-                    {p.w}×{p.h}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </Tool>
 
         <Tool

@@ -19,7 +19,7 @@ export function PlaybackControls() {
   const elapsed = currentTime * duration;
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-card p-2 shadow-sm">
+    <div className="flex shrink-0 items-center gap-2 rounded-lg border bg-card p-2 shadow-sm">
       <Button
         variant="outline"
         size="icon"

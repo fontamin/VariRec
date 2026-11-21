@@ -5,6 +5,38 @@ All notable changes to **VariRec** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] — 2026-11-21
+
+The headline of this release is a **calmer, app-like studio**: the canvas
+size control moves into the preview header, the curve palette collapses to
+a single color, and the desktop layout keeps every panel on screen.
+
+### Changed
+
+- **Canvas size in the preview header** — the resolution readout above the
+  preview ("960 × 540") is now the size control: clicking it opens the
+  width/height entry and the preset chips. The canvas-size tool is gone
+  from the floating style toolbar. Three HD presets join the list:
+  **1080×1080**, **1080×1920** and **1920×1080** (alongside the existing
+  16:9, 1:1, 4:3, 9:16 and 21:9 chips).
+- **One-color curve palette** — the glyph-outline tool shows a single
+  **Curve color**: the outline stroke and the anchor fill take the pick,
+  both borders use its contrast counterpart (same hue, muted, opposite
+  lightness), the control fill gets a shade in between and the handle
+  lines a muted tone. A **More…** button reveals the six per-color
+  pickers (outline, handle, anchor fill/border, control fill/border) for
+  manual fine-tuning — manual tweaks stick until the curve color is
+  picked again, which re-derives them all. The text and page colors keep
+  their separate pickers and swap button, unchanged.
+- **App-shell layout (desktop)** — on large screens the page no longer
+  scrolls: the header, the preview area, the playback controls, the export
+  panel and the footer all fit the viewport, and the side panels scroll
+  internally when they need to. **Fit H** now scales the canvas into the
+  preview area between the header and the Play panel, so a tall preview
+  never pushes the playback/export controls below the fold. Zoomed-in
+  views scroll inside the preview area instead of the page. Below the
+  desktop breakpoint the page keeps its normal scrolling flow.
+
 ## [1.2.1] — 2026-11-21
 
 ### Added
@@ -164,6 +196,7 @@ set of export and editing fixes discovered while using it.
 - FOIT-safe SVG frame rendering (settle-poll + ink backstop).
 - 100% client-side — nothing is ever uploaded.
 
+[1.2.2]: https://github.com/fontamin/VariRec/releases/tag/v1.2.2
 [1.2.1]: https://github.com/fontamin/VariRec/releases/tag/v1.2.1
 [1.2.0]: https://github.com/fontamin/VariRec/releases/tag/v1.2.0
 [1.1.0]: https://github.com/fontamin/VariRec/releases/tag/v1.1.0

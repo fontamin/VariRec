@@ -1,6 +1,6 @@
 {
   "name": "varirec",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "VariRec — variable font animation studio. Drag & drop a variable font, animate its axes, and export GIF / MP4 / WebM, entirely in your browser.",
   "license": "MIT",

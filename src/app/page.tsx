@@ -52,7 +52,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-muted/30">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-muted/30 lg:h-screen lg:overflow-hidden">
       <PlaybackEngine />
 
       {/* Header */}
@@ -94,23 +94,25 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main */}
-      <main className="mx-auto grid w-full max-w-[1500px] flex-1 grid-cols-1 gap-3 px-4 py-3 sm:px-6 lg:grid-cols-12">
+      {/* Main — the desktop (lg+) shell gives every column the full remaining
+          height: side panels scroll internally and the center column keeps
+          the preview, transport and export visible without page scrolling. */}
+      <main className="mx-auto grid w-full max-w-[1500px] flex-1 grid-cols-1 gap-3 px-4 py-3 sm:px-6 lg:min-h-0 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)]">
         {/* Left column — source & animation */}
-        <aside className="space-y-3 lg:col-span-3">
+        <aside className="space-y-3 [scrollbar-width:thin] lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-0.5">
           <DropZone />
           <AnimationPanel />
         </aside>
 
         {/* Center column — preview & transport */}
-        <section className="space-y-3 lg:col-span-6">
+        <section className="space-y-3 [scrollbar-width:thin] lg:col-span-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-y-auto lg:pr-0.5">
           <PreviewStage />
           <PlaybackControls />
           <RecordPanel />
         </section>
 
         {/* Right column — axes */}
-        <aside className="space-y-3 lg:col-span-3">
+        <aside className="space-y-3 [scrollbar-width:thin] lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-0.5">
           <Card className="gap-0 py-0">
             <CardHeader className="border-b px-3 py-2.5">
               <CardTitle className="flex items-center justify-between text-xs">
