@@ -1,27 +1,20 @@
 "use client";
 
-import { Type, Palette, Square } from "lucide-react";
+import { Type, Square } from "lucide-react";
 import { useStudio } from "@/lib/studio-store";
 import type { AlignMode } from "@/lib/studio-store-types";
 import { FONT_SIZE_MAX } from "@/lib/studio-store-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import { CanvasSizeInput } from "./canvas-size-input";
+import { ColorField } from "./color-field";
 
 const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
   { label: "16:9", w: 960, h: 540 },
@@ -92,40 +85,21 @@ export function TypographyPanel() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">Text color</Label>
-            <div className="flex items-center gap-2 rounded border px-1.5 py-0.5">
-              <span className="relative size-5 overflow-hidden rounded-sm">
-                <span
-                  className="absolute inset-0"
-                  style={{ background: textColor }}
-                />
-                <Palette className="absolute inset-0 m-auto size-2.5 text-white mix-blend-difference" />
-              </span>
-              <Input
-                type="color"
-                value={textColor}
-                onChange={(e) => setTextColor(e.target.value)}
-                className="h-6 flex-1 cursor-pointer border-0 bg-transparent p-0"
-              />
-            </div>
+            <ColorField
+              value={textColor}
+              onChange={setTextColor}
+              label="Text color"
+            />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <Label className="text-[11px]">Background</Label>
-            <div className="flex items-center gap-2 rounded border px-1.5 py-0.5">
-              <span className="relative size-5 overflow-hidden rounded-sm">
-                <span
-                  className="absolute inset-0"
-                  style={{ background: bgColor }}
-                />
-              </span>
-              <Input
-                type="color"
-                value={bgColor}
-                onChange={(e) => setBgColor(e.target.value)}
-                className="h-6 flex-1 cursor-pointer border-0 bg-transparent p-0"
-              />
-            </div>
+            <ColorField
+              value={bgColor}
+              onChange={setBgColor}
+              label="Background color"
+            />
           </div>
         </div>
 

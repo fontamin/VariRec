@@ -5,32 +5,29 @@ import {
   computeAxisValues,
   buildVariationString,
   buildCssFontVariationSettings,
-  resolveTextDirection,
-  type RenderConfig,
-  type AxisValue,
   type AxisDisplayInfo,
-  type OverlayConfig,
 } from "./renderer";
+import type { VideoFormat } from "./encoders";
 import {
-  record as recordBlob,
-  downloadBlob,
-  formatSupportsLoopMode,
-  type VideoFormat,
-} from "./encoders";
-import type {
-  LoopMode,
-  AlignMode,
-  VAlign,
-  OverlayPosition,
-  ThumbShape,
-  AxisMoveMode,
-  TextDirection,
-} from "./studio-store-types";
-import {
-  DEFAULT_OVERLAY_FONT,
+  DEFAULT_LAYER_ORDER,
+  DEFAULT_OUTLINE_SETTINGS,
+  DEFAULT_OVERLAY_SETTINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  type AlignMode,
+  type AxisMoveMode,
+  type LayerId,
+  type LoopMode,
+  type OutlineSettings,
+  type OverlaySettings,
+  type TextDirection,
+  type VAlign,
 } from "./studio-store-types";
+import {
+  createRecordSlice,
+  type RecordSliceActions,
+  type RecordSliceState,
+} from "./studio-record-slice";
 
 export const REGISTERED_FAMILY = "VFStudioFont";
 
@@ -39,10 +36,17 @@ export interface AxisState extends FontAxis {
   animFrom: number;
   animTo: number;
   animate: boolean;
+  // Preview visibility of the axis's slider row (the eye toggle in the axes
+  // panel). Hidden axes keep animating and stay in the CSS code line — only
+  // their slider row disappears from the baked overlay.
+  visible: boolean;
 }
 
-export interface StudioState {
-  // Font
+// Recording/export state + actions live in studio-record-slice.ts; the store
+// simply re-exports them through this interface.
+export interface StudioState
+  extends RecordSliceState,
+    RecordSliceActions {
   fontLoaded: boolean;
   isLoadingFont: boolean;
   familyName: string;
@@ -62,6 +66,21 @@ export interface StudioState {
   vAlign: VAlign;
   textDirection: TextDirection; // base direction of the preview/exported text
 
+  // Layers: the editable text layer and the display-only glyph-outline layer
+  // (see lib/outline.ts) can be toggled independently — any combination is
+  // valid. When the text layer is hidden the text stays editable (transparent
+  // fill, visible caret) and still drives the outline.
+  showTextLayer: boolean;
+  outline: OutlineSettings;
+  // Z-order of the four baked layers (text / outline / sliders / css), as a
+  // BOTTOM → TOP array. Reorderable from the Layers tool; both the preview
+  // and the export renderer stack the layers in this order.
+  layerOrder: LayerId[];
+  // Decoded SFNT bytes of the loaded font — handed to fontkit for outline
+  // extraction. Null until a font is loaded; identity-keyed by the outline
+  // engine's font cache, so keep ONE instance per loaded font.
+  fontSfnt: ArrayBuffer | null;
+
   // Canvas
   canvasWidth: number;
   canvasHeight: number;
@@ -74,50 +93,25 @@ export interface StudioState {
   axisMoveMode: AxisMoveMode; // binary bit-stepping or sync (all together)
   repeat: number; // how many cycles the export tiles back to back (1 = single cycle)
 
-  // Overlay (axis sliders + CSS code baked into preview + export)
-  overlayEnabled: boolean;
-  overlayShowSliders: boolean; // the slider block itself (track + thumb)
-  overlayShowName: boolean;
-  overlayShowTag: boolean;
-  overlayShowMinMax: boolean; // axis min & max labels at track ends
-  overlayShowLiveValue: boolean; // instantaneous value number on the slider
-  overlayValueDecimals: number; // decimal places of the live value number
-  overlayShowCss: boolean;
-  overlayCentered: boolean; // center the slider stack horizontally
-  overlayNameGap: number; // horizontal gap: inline axis name → track, em
-  overlayCssGap: number; // slider ↔ CSS line gap, em of overlay font size
-  overlayTextGap: number; // overlay stack ↔ text block gap, em of overlay font size
-  overlayThumbScale: number; // thumb size multiplier
-  overlayThumbShape: ThumbShape;
-  overlayFont: string;
-  overlayFontScale: number; // overlay TEXT size multiplier (1 = default)
-  overlayBold: boolean; // draw overlay text bold
-  overlayTrackLen: number; // slider track length as % of canvas width (20..100)
-  overlayColor: string;
-  overlayBgColor: string;
-  overlayBgOpacity: number;
-  overlayScale: number;
-  overlayPosition: OverlayPosition;
-  overlayAxisGap: number; // vertical gap between slider rows, em of overlay font
+  // Overlay (axis sliders + CSS code baked into preview + export) — ONE
+  // settings group instead of 24 flat fields; patch it with setOverlay.
+  overlay: OverlaySettings;
 
   // v1.1 direct-manipulation layout offsets (canvas px), set by dragging the
   // preview frames. 0,0 = auto layout (vAlign/align + overlay position).
   textOffsetX: number;
   textOffsetY: number;
+  outlineOffsetX: number; // outline layer drag offset (independent of text)
+  outlineOffsetY: number;
   panelOffsetX: number;
   panelOffsetY: number;
+  cssOffsetX: number; // CSS code line drag offset (independent of the panel)
+  cssOffsetY: number;
   snapCenterEnabled: boolean; // magnet-snap dragged elements to the canvas width centre
 
   // Playback
   isPlaying: boolean;
   currentTime: number;
-
-  // Recording
-  isRecording: boolean;
-  recordProgress: number;
-  lastExportUrl: string | null;
-  lastExportName: string | null;
-  lastExportFormat: VideoFormat | null;
 
   // Actions
   loadFont: (file: File) => Promise<void>;
@@ -139,34 +133,19 @@ export interface StudioState {
   setAxisMoveMode: (m: AxisMoveMode) => void;
   setRepeat: (n: number) => void;
 
-  setOverlayEnabled: (b: boolean) => void;
-  setOverlayShowSliders: (b: boolean) => void;
-  setOverlayShowName: (b: boolean) => void;
-  setOverlayShowTag: (b: boolean) => void;
-  setOverlayShowMinMax: (b: boolean) => void;
-  setOverlayShowLiveValue: (b: boolean) => void;
-  setOverlayValueDecimals: (n: number) => void;
-  setOverlayShowCss: (b: boolean) => void;
-  setOverlayCentered: (b: boolean) => void;
-  setOverlayNameGap: (n: number) => void;
-  setOverlayCssGap: (n: number) => void;
-  setOverlayTextGap: (n: number) => void;
-  setOverlayThumbScale: (n: number) => void;
-  setOverlayThumbShape: (s: ThumbShape) => void;
-  setOverlayFont: (f: string) => void;
-  setOverlayFontScale: (n: number) => void;
-  setOverlayBold: (b: boolean) => void;
-  setOverlayTrackLen: (n: number) => void;
-  setOverlayColor: (c: string) => void;
-  setOverlayBgColor: (c: string) => void;
-  setOverlayBgOpacity: (n: number) => void;
-  setOverlayScale: (n: number) => void;
-  setOverlayPosition: (p: OverlayPosition) => void;
-  setOverlayAxisGap: (n: number) => void;
+  setOverlay: (patch: Partial<OverlaySettings>) => void;
+  setOutline: (patch: Partial<OutlineSettings>) => void;
+  setShowTextLayer: (b: boolean) => void;
+  // Move the dragged layer next to the drop target (dnd-kit sortable drag
+  // in the Layers tool). No-op when the ids match or either id is missing.
+  // The order array runs bottom → top.
+  reorderLayers: (fromId: LayerId, toId: LayerId) => void;
 
   // Direct manipulation (drag in the preview)
   setTextOffset: (x: number, y: number) => void;
+  setOutlineOffset: (x: number, y: number) => void;
   setPanelOffset: (x: number, y: number) => void;
+  setCssOffset: (x: number, y: number) => void;
   setSnapCenterEnabled: (b: boolean) => void;
   resetLayout: () => void;
 
@@ -174,19 +153,20 @@ export interface StudioState {
   setAxisAnim: (tag: string, from: number, to: number) => void;
   toggleAxisAnimate: (tag: string) => void;
   resetAxisToDefault: (tag: string) => void;
+  // Show/hide the axis's slider row in the baked overlay (eye toggle). The
+  // axis keeps animating and stays in the CSS code line either way.
+  setAxisVisible: (tag: string, visible: boolean) => void;
+  // Reorder the axis list by drag & drop (tags are unique per font). The
+  // order drives the axes panel, the preview overlay slider stack and the
+  // binary bit assignment (top axis = least significant bit).
+  reorderAxes: (fromTag: string, toTag: string) => void;
 
   play: () => void;
   pause: () => void;
   stop: () => void;
   seek: (t: number) => void;
   setCurrentTime: (t: number) => void;
-
-  record: (format: VideoFormat) => Promise<void>;
-  cancelRecording: () => void;
-  clearExport: () => void;
 }
-
-let cancelToken = { cancelled: false };
 
 function buildAxes(parsed: FontAxis[]): AxisState[] {
   const preferredIndex = parsed.findIndex((a) => a.tag === "wght");
@@ -197,16 +177,8 @@ function buildAxes(parsed: FontAxis[]): AxisState[] {
     animFrom: a.min,
     animTo: a.max,
     animate: i === defaultIdx,
+    visible: true,
   }));
-}
-
-function valuesForProgress(
-  axes: AxisState[],
-  progress: number,
-  easing: EasingType,
-  mode: AxisMoveMode
-): AxisValue[] {
-  return computeAxisValues(axes, progress, easing, mode);
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
@@ -228,6 +200,11 @@ export const useStudio = create<StudioState>((set, get) => ({
   vAlign: "middle",
   textDirection: "auto",
 
+  showTextLayer: true,
+  outline: { ...DEFAULT_OUTLINE_SETTINGS },
+  layerOrder: [...DEFAULT_LAYER_ORDER],
+  fontSfnt: null,
+
   canvasWidth: 960,
   canvasHeight: 540,
 
@@ -238,45 +215,20 @@ export const useStudio = create<StudioState>((set, get) => ({
   axisMoveMode: "binary",
   repeat: 1,
 
-  overlayEnabled: true,
-  overlayShowSliders: true,
-  overlayShowName: false,
-  overlayShowTag: false,
-  overlayShowMinMax: false,
-  overlayShowLiveValue: false,
-  overlayValueDecimals: 1,
-  overlayShowCss: false,
-  overlayCentered: true,
-  overlayNameGap: 0.9,
-  overlayCssGap: 1.1,
-  overlayTextGap: 0.9,
-  overlayThumbScale: 1,
-  overlayThumbShape: "circle",
-  overlayFont: DEFAULT_OVERLAY_FONT,
-  overlayFontScale: 1,
-  overlayBold: false,
-  overlayTrackLen: 30,
-  overlayColor: "#000000",
-  overlayBgColor: "#ffffff",
-  overlayBgOpacity: 0,
-  overlayScale: 1,
-  overlayPosition: "bottom",
-  overlayAxisGap: 1.2,
+  overlay: { ...DEFAULT_OVERLAY_SETTINGS },
 
   textOffsetX: 0,
   textOffsetY: 0,
+  outlineOffsetX: 0,
+  outlineOffsetY: 0,
   panelOffsetX: 0,
   panelOffsetY: 0,
+  cssOffsetX: 0,
+  cssOffsetY: 0,
   snapCenterEnabled: true,
 
   isPlaying: false,
   currentTime: 0,
-
-  isRecording: false,
-  recordProgress: 0,
-  lastExportUrl: null,
-  lastExportName: null,
-  lastExportFormat: null,
 
   loadFont: async (file) => {
     set({ isLoadingFont: true });
@@ -300,6 +252,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         fontBase64: parsed.base64,
         fontCssFormat: parsed.cssFormat,
         fontMime: parsed.mime,
+        fontSfnt: parsed.sfnt,
         axes,
         // Sensible loop default: a single axis reads best sweeping out and
         // back (ping-pong); multiple axes read best as a continuous loop.
@@ -340,40 +293,48 @@ export const useStudio = create<StudioState>((set, get) => ({
   setAxisMoveMode: (axisMoveMode) => set({ axisMoveMode }),
   setRepeat: (repeat) => set({ repeat: Math.max(1, Math.round(repeat)) }),
 
-  setOverlayEnabled: (overlayEnabled) => set({ overlayEnabled }),
-  setOverlayShowSliders: (overlayShowSliders) => set({ overlayShowSliders }),
-  setOverlayShowName: (overlayShowName) => set({ overlayShowName }),
-  setOverlayShowTag: (overlayShowTag) => set({ overlayShowTag }),
-  setOverlayShowMinMax: (overlayShowMinMax) => set({ overlayShowMinMax }),
-  setOverlayShowLiveValue: (overlayShowLiveValue) =>
-    set({ overlayShowLiveValue }),
-  setOverlayValueDecimals: (overlayValueDecimals) =>
-    set({ overlayValueDecimals }),
-  setOverlayShowCss: (overlayShowCss) => set({ overlayShowCss }),
-  setOverlayCentered: (overlayCentered) => set({ overlayCentered }),
-  setOverlayNameGap: (overlayNameGap) => set({ overlayNameGap }),
-  setOverlayCssGap: (overlayCssGap) => set({ overlayCssGap }),
-  setOverlayTextGap: (overlayTextGap) => set({ overlayTextGap }),
-  setOverlayThumbScale: (overlayThumbScale) => set({ overlayThumbScale }),
-  setOverlayThumbShape: (overlayThumbShape) => set({ overlayThumbShape }),
-  setOverlayFont: (overlayFont) => set({ overlayFont }),
-  setOverlayFontScale: (overlayFontScale) => set({ overlayFontScale }),
-  setOverlayBold: (overlayBold) => set({ overlayBold }),
-  setOverlayTrackLen: (overlayTrackLen) => set({ overlayTrackLen }),
-  setOverlayColor: (overlayColor) => set({ overlayColor }),
-  setOverlayBgColor: (overlayBgColor) => set({ overlayBgColor }),
-  setOverlayBgOpacity: (overlayBgOpacity) => set({ overlayBgOpacity }),
-  setOverlayScale: (overlayScale) => set({ overlayScale }),
-  setOverlayPosition: (overlayPosition) => set({ overlayPosition }),
-  setOverlayAxisGap: (overlayAxisGap) => set({ overlayAxisGap }),
+  // One patch-in setter replaces the 24 former per-field overlay setters.
+  setOverlay: (patch) =>
+    set((s) => ({ overlay: { ...s.overlay, ...patch } })),
+
+  setOutline: (patch) =>
+    set((s) => ({ outline: { ...s.outline, ...patch } })),
+  setShowTextLayer: (showTextLayer) => set({ showTextLayer }),
+
+  // Move the dragged layer next to the drop target. The order array runs
+  // bottom → top, so dropping a row onto another re-stacks the layers —
+  // both the preview and the export renderer follow the new order.
+  reorderLayers: (fromId, toId) =>
+    set((s) => {
+      if (fromId === toId) return s;
+      const from = s.layerOrder.indexOf(fromId);
+      const to = s.layerOrder.indexOf(toId);
+      if (from < 0 || to < 0) return s;
+      const layerOrder = [...s.layerOrder];
+      const [moved] = layerOrder.splice(from, 1);
+      layerOrder.splice(to, 0, moved);
+      return { layerOrder };
+    }),
 
   setTextOffset: (textOffsetX, textOffsetY) =>
     set({ textOffsetX, textOffsetY }),
+  setOutlineOffset: (outlineOffsetX, outlineOffsetY) =>
+    set({ outlineOffsetX, outlineOffsetY }),
   setPanelOffset: (panelOffsetX, panelOffsetY) =>
     set({ panelOffsetX, panelOffsetY }),
+  setCssOffset: (cssOffsetX, cssOffsetY) => set({ cssOffsetX, cssOffsetY }),
   setSnapCenterEnabled: (snapCenterEnabled) => set({ snapCenterEnabled }),
   resetLayout: () =>
-    set({ textOffsetX: 0, textOffsetY: 0, panelOffsetX: 0, panelOffsetY: 0 }),
+    set({
+      textOffsetX: 0,
+      textOffsetY: 0,
+      outlineOffsetX: 0,
+      outlineOffsetY: 0,
+      panelOffsetX: 0,
+      panelOffsetY: 0,
+      cssOffsetX: 0,
+      cssOffsetY: 0,
+    }),
 
   setAxisCurrent: (tag, value) =>
     set((s) => ({
@@ -401,6 +362,10 @@ export const useStudio = create<StudioState>((set, get) => ({
         a.tag === tag ? { ...a, animate: !a.animate } : a
       ),
     })),
+  setAxisVisible: (tag, visible) =>
+    set((s) => ({
+      axes: s.axes.map((a) => (a.tag === tag ? { ...a, visible } : a)),
+    })),
   resetAxisToDefault: (tag) =>
     set((s) => ({
       axes: s.axes.map((a) =>
@@ -416,6 +381,20 @@ export const useStudio = create<StudioState>((set, get) => ({
       ),
     })),
 
+  // Move the dragged axis next to the drop target (dnd-kit sortable). No-op
+  // when the ids match or the drop target is missing.
+  reorderAxes: (fromTag, toTag) =>
+    set((s) => {
+      if (fromTag === toTag) return s;
+      const from = s.axes.findIndex((a) => a.tag === fromTag);
+      const to = s.axes.findIndex((a) => a.tag === toTag);
+      if (from < 0 || to < 0) return s;
+      const axes = [...s.axes];
+      const [moved] = axes.splice(from, 1);
+      axes.splice(to, 0, moved);
+      return { axes };
+    }),
+
   play: () => {
     const { currentTime, loopMode } = get();
     if (loopMode === "once" && currentTime >= 1) {
@@ -428,150 +407,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   seek: (t) => set({ isPlaying: false, currentTime: Math.min(1, Math.max(0, t)) }),
   setCurrentTime: (t) => set({ currentTime: Math.min(1, Math.max(0, t)) }),
 
-  record: async (format) => {
-    const s = get();
-    if (!s.fontLoaded) return;
-    if (s.isRecording) return;
-    if (!formatSupportsLoopMode(format, s.loopMode)) {
-      throw new Error(
-        "Ping-pong mode is only supported for GIF export. Switch to once or loop for video formats."
-      );
-    }
-    // Video "loop" renders the timeline forward then backward so the clip
-    // loops seamlessly. With binary movement and multiple animated axes
-    // that backward pass would replay the binary count in REVERSE, so this
-    // combination is GIF-only (GIF loops one full forward cycle natively).
-    if (
-      format !== "gif" &&
-      s.loopMode === "loop" &&
-      s.axisMoveMode === "binary" &&
-      s.axes.filter((a) => a.animate).length > 1
-    ) {
-      throw new Error(
-        "Binary movement with multiple animated axes is GIF-only in Loop mode. Use Sync movement or animate a single axis for MP4/WebM."
-      );
-    }
-    cancelToken = { cancelled: false };
-    set({
-      isRecording: true,
-      recordProgress: 0,
-      isPlaying: false,
-      lastExportUrl: null,
-      lastExportName: null,
-      lastExportFormat: null,
-    });
-    try {
-      const state = get();
-      const blob = await recordBlob(format, {
-        width: state.canvasWidth,
-        height: state.canvasHeight,
-        fps: state.fps,
-        duration: state.duration,
-        repeat: state.repeat,
-        loopMode: state.loopMode,
-        cancelled: () => cancelToken.cancelled,
-        onProgress: (p) => set({ recordProgress: p }),
-        getRenderConfig: (progress) => {
-          const cur = get();
-          const values = valuesForProgress(
-            cur.axes,
-            progress,
-            cur.easing,
-            cur.axisMoveMode
-          );
-          const overlay: OverlayConfig | null =
-            cur.overlayEnabled &&
-            ((cur.overlayShowSliders && cur.axes.length > 0) ||
-              cur.overlayShowCss)
-              ? {
-                  showSliders: cur.overlayShowSliders,
-                  showName: cur.overlayShowName,
-                  showTag: cur.overlayShowTag,
-                  showMinMax: cur.overlayShowMinMax,
-                  showLiveValue: cur.overlayShowLiveValue,
-                  valueDecimals: cur.overlayValueDecimals,
-                  showCss: cur.overlayShowCss,
-                  centered: cur.overlayCentered,
-                  nameGap: cur.overlayNameGap,
-                  cssGap: cur.overlayCssGap,
-                  textGap: cur.overlayTextGap,
-                  thumbScale: cur.overlayThumbScale,
-                  thumbShape: cur.overlayThumbShape,
-                  font: cur.overlayFont,
-                  bold: cur.overlayBold,
-                  fontScale: cur.overlayFontScale,
-                  trackLenPct: cur.overlayTrackLen,
-                  color: cur.overlayColor,
-                  bgColor: cur.overlayBgColor,
-                  bgOpacity: cur.overlayBgOpacity,
-                  scale: cur.overlayScale,
-                  position: cur.overlayPosition,
-                  axisGapEm: cur.overlayAxisGap,
-                  offsetX: cur.panelOffsetX,
-                  offsetY: cur.panelOffsetY,
-                  axes: cur.axes.map((a, i) => ({
-                    tag: a.tag,
-                    name: a.name,
-                    value: values[i]?.value ?? a.current,
-                    min: a.min,
-                    max: a.max,
-                  })),
-                }
-              : null;
-          const cfg: RenderConfig = {
-            text: cur.text,
-            fontBase64: cur.fontBase64,
-            fontCssFormat: cur.fontCssFormat,
-            fontMime: cur.fontMime,
-            variation: values,
-            fontSize: cur.fontSize,
-            textColor: cur.textColor,
-            bgColor: cur.bgColor,
-            width: cur.canvasWidth,
-            height: cur.canvasHeight,
-            letterSpacing: cur.letterSpacing,
-            lineHeight: cur.lineHeight,
-            align: cur.align,
-            vAlign: cur.vAlign,
-            direction: resolveTextDirection(cur.text, cur.textDirection),
-            textOffsetX: cur.textOffsetX,
-            textOffsetY: cur.textOffsetY,
-            overlay,
-          };
-          return cfg;
-        },
-      });
-      const url = URL.createObjectURL(blob);
-      const stamp = new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")
-        .slice(0, 19);
-      const ext =
-        format === "gif" ? "gif" : format === "mp4" ? "mp4" : "webm";
-      const name = `variable-font-${stamp}.${ext}`;
-      set({
-        lastExportUrl: url,
-        lastExportName: name,
-        lastExportFormat: format,
-        isRecording: false,
-        recordProgress: 1,
-      });
-      downloadBlob(blob, name);
-    } catch (e) {
-      set({ isRecording: false, recordProgress: 0 });
-      throw e;
-    }
-  },
-
-  cancelRecording: () => {
-    cancelToken.cancelled = true;
-  },
-
-  clearExport: () => {
-    const { lastExportUrl } = get();
-    if (lastExportUrl) URL.revokeObjectURL(lastExportUrl);
-    set({ lastExportUrl: null, lastExportName: null, lastExportFormat: null });
-  },
+  // Record/export actions come from the record slice (see studio-record-slice.ts).
+  ...createRecordSlice(set, get),
 }));
 
 // Build the CSS font-variation-settings string for the current frame.
@@ -596,7 +433,7 @@ export function selectCurrentCssVariation(s: StudioState): string {
     s.easing,
     s.axisMoveMode
   );
-  return buildCssFontVariationSettings(values, s.overlayValueDecimals);
+  return buildCssFontVariationSettings(values, s.overlay.valueDecimals);
 }
 
 // Build the axis display info for the current frame — used by the preview overlay.
@@ -613,6 +450,7 @@ export function selectCurrentAxesInfo(s: StudioState): AxisDisplayInfo[] {
     value: values[i]?.value ?? a.current,
     min: a.min,
     max: a.max,
+    visible: a.visible,
   }));
 }
 

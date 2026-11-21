@@ -9,18 +9,24 @@
 // the stack height), min/max labels flank the track, and an optional
 // Material-style value pill rides ON the thumb (also height-neutral). An
 // optional CSS `font-variation-settings` code line can be appended. The
-// overlay stack is positioned relative to the text block (with a
-// configurable gap), so it follows the text wherever vertical alignment
-// places it. Identical geometry is reused by the DOM live preview so preview
-// and export look the same.
+// overlay stack is anchored to the CANVAS edge (position top/bottom) — it is
+// fully independent of the text block — and the slider panel plus the CSS
+// line each carry their own drag offset so they can be placed anywhere by
+// direct manipulation. Identical geometry is reused by the DOM live preview
+// so preview and export look the same.
 
 import { applyEasing, type EasingType } from "./easing";
+import { buildOutlineFrame } from "./outline";
 import type {
   AxisMoveMode,
+  LayerId,
+  OutlineSettings,
+  OverlaySettings,
   TextDirection,
   ThumbShape,
   VAlign,
 } from "./studio-store-types";
+import { normalizeLayerOrder } from "./studio-store-types";
 
 // Characters from RTL scripts (Hebrew, Arabic, Syriac, Thaana, …) — used by
 // the "auto" text-direction rule (first strong character, like dir=auto).
@@ -54,36 +60,38 @@ export interface AxisDisplayInfo {
   value: number;
   min: number;
   max: number;
+  // Per-axis preview visibility (the eye toggle in the axes panel). Hidden
+  // axes keep animating and stay in the CSS line, but their slider row is
+  // omitted from the baked overlay. Optional so callers that don't care
+  // (and older persisted configs) treat as visible.
+  visible?: boolean;
 }
 
-export interface OverlayConfig {
-  showSliders: boolean; // the slider block itself (track + thumb + panel)
-  showName: boolean;
-  showTag: boolean;
-  showMinMax: boolean; // axis min & max labels at the two ends of the track
-  showLiveValue: boolean; // instantaneous value number riding above the thumb
-  showCss: boolean;
-  valueDecimals: number; // decimal places shown for the live value number
-  centered: boolean; // center the slider stack horizontally
-  nameGap: number; // gap between axis name and slider, in em of overlay font
-  cssGap: number; // gap between slider panel and CSS line, in em
-  textGap: number; // gap between the overlay stack and the text block, in em
-  font: string; // css font-family stack for overlay text
-  bold: boolean; // draw overlay text in bold (700)
-  fontScale: number; // overlay TEXT size multiplier (1 = default)
-  trackLenPct: number; // slider track length as % of canvas width (20..100)
-  color: string; // overlay text/fill color
-  bgColor: string; // panel background color
-  bgOpacity: number; // 0..1 (0 = transparent panel)
-  scale: number; // size multiplier
-  position: "top" | "bottom"; // slider stack relative to the text block
-  thumbScale: number; // thumb size multiplier
-  thumbShape: ThumbShape;
+// One frame's overlay configuration = the user's overlay SETTINGS group
+// (studio-store-types.ts, stored as `overlay` in the store) plus the data
+// that varies per frame / per placement and is therefore kept outside the
+// settings object.
+export interface OverlayConfig
+  extends Omit<OverlaySettings, "enabled"> {
+  // Per-frame axis values to draw (the store keeps the full AxisState[]).
   axes: AxisDisplayInfo[];
-  // v1.1 direct-manipulation layout (set by dragging the preview frames):
-  axisGapEm: number; // vertical gap between slider rows, em of overlay font
-  offsetX: number; // stack position offset, canvas px (0 = auto layout)
+  // Direct-manipulation drag offsets, canvas px (store: panelOffsetX/Y).
+  offsetX: number;
   offsetY: number;
+  // The CSS code line's OWN drag offsets (store: cssOffsetX/Y) — it moves
+  // independently of the slider panel.
+  cssOffsetX: number;
+  cssOffsetY: number;
+}
+
+// Everything the SVG frame renderer needs to bake the glyph-outline layer
+// into an exported frame. Computed once per frame inside buildSvgString via
+// lib/outline.ts (fontkit outlines + bidi-js run shaping).
+export interface OutlineRenderConfig {
+  settings: OutlineSettings;
+  offsetX: number;
+  offsetY: number;
+  sfnt: ArrayBuffer | null;
 }
 
 export interface RenderConfig {
@@ -105,6 +113,14 @@ export interface RenderConfig {
   textOffsetX: number; // text block drag offset, canvas px (0 = auto layout)
   textOffsetY: number;
   overlay?: OverlayConfig | null;
+  // Display-only glyph-outline layer (lib/outline.ts). Null = off.
+  outline?: OutlineRenderConfig | null;
+  // False hides the editable text layer (transparent fill) while the outline
+  // layer still renders — any combination of the two layers is valid.
+  textVisible?: boolean;
+  // Z-order of the baked layers (text / outline / sliders / css), bottom →
+  // top. Optional — falls back to the factory default stack.
+  layerOrder?: LayerId[];
 }
 
 export function buildVariationString(variation: AxisValue[]): string {
@@ -231,19 +247,16 @@ export function computeTextBlock(
   return { top, bottom: top + h, height: h };
 }
 
-// Apply the drag offsets to the auto-computed text block, clamping the result
-// so the block can never be dragged fully out of the canvas. Shared by the
-// SVG renderer, the ink backstop and the DOM preview so all three agree.
+// Apply the drag offsets to the auto-computed text block. Unclamped by
+// design: the text may travel anywhere — fully or partially outside the
+// canvas — and the stage/export clips it at the canvas boundary. Shared by
+// the SVG renderer, the ink backstop and the DOM preview so all three agree.
 export function applyTextOffset(
   base: TextBlock,
   offsetX: number,
-  offsetY: number,
-  height: number
+  offsetY: number
 ): TextBlock {
-  const top = Math.min(
-    Math.max(0, Math.round(base.top + offsetY)),
-    Math.max(0, height - base.height)
-  );
+  const top = Math.round(base.top + offsetY);
   return { ...base, top, bottom: top + base.height };
 }
 
@@ -255,7 +268,6 @@ export interface OverlayMetrics {
   minMaxFont: number;
   nameW: number; // inline axis-name width (0 when the name is hidden)
   nameGapPx: number; // horizontal gap: inline name → min label / track
-  textGapPx: number;
   pillOn: boolean; // value-pill mode (number rides ON the thumb)
   pillFont: number;
   pillPadX: number;
@@ -288,6 +300,12 @@ export interface OverlayMetrics {
   cssGapPx: number;
   stackH: number; // total height of the overlay stack (panel + css line)
 }
+
+// Fixed gap between the slider panel and the CSS code line (em of overlay
+// font size) used by the automatic layout. There is no user-facing gap
+// setting anymore: both elements move freely by direct manipulation, so a
+// tuned gap adds nothing.
+const AUTO_CSS_GAP_EM = 1.1;
 
 function cssCodeText(o: OverlayConfig): string {
   // Fixed decimals (same setting as the slider's live value) so the string
@@ -325,16 +343,20 @@ function minMaxChars(o: OverlayConfig): number {
 
 // Shared geometry for the overlay — used by both the SVG frame renderer and
 // the DOM live preview so both look identical. All values are in canvas px.
+// NOTE: the overlay layout does NOT take the text block — it is anchored to
+// the canvas edges and is fully independent of where the text sits.
 export function computeOverlayMetrics(
   width: number,
   height: number,
-  o: OverlayConfig,
-  textBlock: TextBlock
+  o: OverlayConfig
 ): OverlayMetrics {
   const s = o.scale;
   // The slider block only exists when the "slider" toggle is on; the name,
   // min–max labels and the value pill are decorations that live inside it.
-  const slidersOn = o.showSliders && o.axes.length > 0;
+  // Only the VISIBLE axes get slider rows (the per-axis eye toggle) — hidden
+  // axes keep animating and stay in the CSS line but lose their row.
+  const rows = o.axes.filter((a) => a.visible !== false);
+  const slidersOn = o.showSliders && rows.length > 0;
   // Overlay TEXT size multiplier (independent of the panel/thumb scale so the
   // font can be grown without moving every other piece of geometry).
   const fs = Math.min(3, Math.max(0.5, o.fontScale || 1));
@@ -352,10 +374,10 @@ export function computeOverlayMetrics(
 
   // Inline axis name — drawn BEFORE the track on the same row, so toggling
   // the name never changes the height of the slider stack.
-  const hasName = slidersOn && (o.showName || o.showTag) && o.axes.length > 0;
+  const hasName = slidersOn && (o.showName || o.showTag) && rows.length > 0;
   let nameChars = 0;
   if (hasName) {
-    for (const a of o.axes) {
+    for (const a of rows) {
       let len = 0;
       if (o.showName) len += a.name.length;
       if (o.showTag) len += a.tag.length + 2;
@@ -366,9 +388,6 @@ export function computeOverlayMetrics(
   // Horizontal gap between the inline name and the min label / track.
   const nameGapPx = Math.round(
     Math.min(Math.max(o.nameGap, 0), 4) * fontPx
-  );
-  const textGapPx = Math.round(
-    Math.min(Math.max(o.textGap, 0), 12) * fontPx
   );
 
   // Value pill riding ON the thumb (Material-style label). It replaces the
@@ -381,7 +400,7 @@ export function computeOverlayMetrics(
   const pillPadX = Math.max(6, Math.round(pillFont * 0.55));
   const pillPadY = Math.max(3, Math.round(pillFont * 0.3));
   let valueChars = 3;
-  for (const a of o.axes) {
+  for (const a of rows) {
     const len = Math.max(
       formatValue(a.min, o.valueDecimals).length,
       formatValue(a.max, o.valueDecimals).length
@@ -460,9 +479,7 @@ export function computeOverlayMetrics(
       : fontPx;
   const cssTextW = Math.ceil(cssWidest.length * 0.62 * cssFontPx);
   const cssBarH = o.showCss ? Math.round(cssFontPx * 1.5 + innerPad * 1.1) : 0;
-  const cssGapPx = Math.round(
-    Math.min(Math.max(o.cssGap, 0), 4) * fontPx
-  );
+  const cssGapPx = Math.round(AUTO_CSS_GAP_EM * fontPx);
   const cssOn = o.showCss && cssBarH > 0;
   const cssBarW = cssOn
     ? Math.min(
@@ -477,7 +494,7 @@ export function computeOverlayMetrics(
   // gap may grow until the panel (plus the CSS line) exactly fills the
   // vertical space between the canvas margins.
   const rowStack = trackRowH; // one compact row per axis
-  const n = o.axes.length;
+  const n = rows.length;
   const availStackH = Math.max(0, height - pad * 2);
   const cssExtra =
     slidersOn && cssOn ? cssGapPx + cssBarH : cssOn ? cssBarH : 0;
@@ -493,20 +510,32 @@ export function computeOverlayMetrics(
     slidersOn && n > 0 ? innerPad * 2 + rowStack * n + axisGap * (n - 1) : 0;
 
   // ── Vertical placement ────────────────────────────────────────────────
-  // The whole stack (slider panel + CSS line) hugs the text block with
-  // textGapPx between them, clamped so it never leaves the canvas.
+  // The overlay stack is anchored to the CANVAS edge — position "top" hugs
+  // the top margin, "bottom" hugs the bottom margin. It is FULLY independent
+  // of the text block: moving, resizing or re-aligning the text never moves
+  // the sliders or the CSS line. The slider panel and the CSS line then move
+  // INDEPENDENTLY of each other too: each carries its own drag offset
+  // (offsetX/Y for the panel, cssOffsetX/Y for the CSS line) and is clamped
+  // so its OWN box never leaves the canvas — dragging one never moves the
+  // other.
   const stackH = panelH + (slidersOn && cssOn ? cssGapPx + cssBarH : cssOn ? cssBarH : 0);
   const minTop = pad;
-  const maxTop = Math.max(minTop, height - pad - stackH);
-  const autoPanelY =
-    o.position === "top"
-      ? Math.round(
-          Math.min(maxTop, Math.max(minTop, textBlock.top - textGapPx - stackH))
-        )
-      : Math.round(
-          Math.min(maxTop, Math.max(minTop, textBlock.bottom + textGapPx))
-        );
-  const autoPanelX = o.centered
+  const bottomEdge = height - pad; // the stack's bottom edge hugs this in "bottom" mode
+  let autoPanelY: number;
+  let autoCssY: number;
+  if (o.position === "top") {
+    autoPanelY = minTop;
+    autoCssY = slidersOn ? autoPanelY + panelH + cssGapPx : minTop;
+  } else {
+    // "bottom": the whole stack ends at the bottom canvas margin.
+    const stackTop = Math.max(minTop, bottomEdge - stackH);
+    autoPanelY = slidersOn ? stackTop : minTop;
+    autoCssY = slidersOn
+      ? stackTop + panelH + cssGapPx
+      : Math.max(minTop, bottomEdge - cssBarH);
+  }
+  const panelAutoY = Math.round(autoPanelY);
+  const panelAutoX = o.centered
     ? Math.max(pad, Math.round((width - panelW) / 2))
     : pad;
   const autoCssX = cssOn
@@ -514,32 +543,30 @@ export function computeOverlayMetrics(
       ? Math.max(pad, Math.round((width - cssBarW) / 2))
       : pad
     : 0;
+  const cssAutoY = Math.round(autoCssY);
 
-  // v1.1 direct-manipulation offsets: dragging the stack frame in the preview
-  // shifts panelX/panelY/cssBarX/cssBarY, clamped so nothing leaves the canvas.
+  // v1.1 direct-manipulation offsets: dragging a frame in the preview
+  // shifts that element only, clamped so it never leaves the canvas.
   const offX = Math.round(o.offsetX || 0);
   const offY = Math.round(o.offsetY || 0);
   const panelY = Math.min(
-    Math.max(0, autoPanelY + offY),
-    Math.max(0, height - stackH)
+    Math.max(0, panelAutoY + offY),
+    Math.max(0, height - panelH)
   );
   const panelX = Math.min(
-    Math.max(0, autoPanelX + offX),
+    Math.max(0, panelAutoX + offX),
     Math.max(0, width - panelW)
   );
+  const cssOffX = Math.round(o.cssOffsetX || 0);
+  const cssOffY = Math.round(o.cssOffsetY || 0);
   const cssBarY = cssOn
-    ? Math.round(
-        Math.min(
-          height - pad - cssBarH,
-          Math.max(
-            pad,
-            slidersOn ? panelY + panelH + cssGapPx : panelY
-          )
-        )
+    ? Math.min(
+        Math.max(0, cssAutoY + cssOffY),
+        Math.max(0, height - cssBarH)
       )
     : 0;
   const cssBarX = cssOn
-    ? Math.min(Math.max(0, autoCssX + offX), Math.max(0, width - cssBarW))
+    ? Math.min(Math.max(0, autoCssX + cssOffX), Math.max(0, width - cssBarW))
     : 0;
 
   const trackLeft =
@@ -553,7 +580,6 @@ export function computeOverlayMetrics(
     minMaxFont,
     nameW,
     nameGapPx,
-    textGapPx,
     pillOn,
     pillFont,
     pillPadX,
@@ -611,13 +637,15 @@ function thumbSvg(
   }
 }
 
+// Builds the baked overlay artwork as TWO independent layer strings — the
+// slider panel and the CSS code line — so the frame composer can stack them
+// in the user's chosen z-order relative to the text and outline layers.
 function buildOverlaySvg(
   o: OverlayConfig,
   width: number,
-  height: number,
-  textBlock: TextBlock
-): string {
-  const m = computeOverlayMetrics(width, height, o, textBlock);
+  height: number
+): { sliders: string; css: string } {
+  const m = computeOverlayMetrics(width, height, o);
   const parts: string[] = [];
   const fontAttr = `font-family="${escapeAttr(o.font)}"`;
   const weightAttr = o.bold ? ' font-weight="700"' : "";
@@ -630,7 +658,10 @@ function buildOverlaySvg(
     }
     const contentX = m.panelX + m.innerPad;
 
-    o.axes.forEach((a, i) => {
+    // Only the VISIBLE axes get rows (matches the geometry above).
+    o.axes
+      .filter((a) => a.visible !== false)
+      .forEach((a, i) => {
       const y = m.panelY + m.innerPad + i * (m.trackRowH + m.axisGap);
       const cy = y + m.trackRowH / 2;
       const t = clamp01((a.value - a.min) / (a.max - a.min || 1));
@@ -694,10 +725,11 @@ function buildOverlaySvg(
     });
   }
 
+  const cssParts: string[] = [];
   if (m.cssOn) {
     const cssText = cssCodeText(o);
     if (o.bgOpacity > 0) {
-      parts.push(
+      cssParts.push(
         `<rect x="${m.cssBarX}" y="${m.cssBarY}" width="${m.cssBarW}" height="${m.cssBarH}" rx="${m.panelRx}" fill="${escapeAttr(o.bgColor)}" fill-opacity="${round2(o.bgOpacity)}"/>`
       );
     }
@@ -705,12 +737,12 @@ function buildOverlaySvg(
     const tx = o.centered
       ? m.cssBarX + m.cssBarW / 2
       : m.cssBarX + m.innerPad;
-    parts.push(
+    cssParts.push(
       `<text x="${round2(tx)}" y="${round2(m.cssBarY + m.cssBarH / 2 + m.cssFontPx * 0.36)}" text-anchor="${anchor}" fill="${fill}" ${fontAttr}${weightAttr} font-size="${m.cssFontPx}" xml:space="preserve">${escapeXml(cssText)}</text>`
     );
   }
 
-  return parts.join("");
+  return { sliders: parts.join(""), css: cssParts.join("") };
 }
 
 export function buildSvgString(cfg: RenderConfig): string {
@@ -739,22 +771,18 @@ export function buildSvgString(cfg: RenderConfig): string {
   const textBlock = applyTextOffset(
     computeTextBlock(height, fontSize, lineHeight, lines.length, vAlign),
     textOffsetX,
-    textOffsetY,
-    height
+    textOffsetY
   );
   const top = textBlock.top;
   // Horizontal alignment is PHYSICAL (left/center/right stay where they are
   // on screen regardless of text direction). SVG text-anchor is LOGICAL —
   // with an RTL base direction start/end swap sides — so map the physical
-  // alignment onto the matching logical anchor. anchorX stays physical.
-  const anchorX = Math.min(
-    width,
-    Math.max(
-      0,
-      (align === "center" ? width / 2 : align === "right" ? width - 24 : 24) +
-        textOffsetX
-    )
-  );
+  // alignment onto the matching logical anchor. anchorX stays physical and
+  // is UNCLAMPED: the text may travel beyond the canvas edges and the SVG
+  // viewport clips it, exactly like the DOM preview.
+  const anchorX =
+    (align === "center" ? width / 2 : align === "right" ? width - 24 : 24) +
+    textOffsetX;
   const physAnchor =
     align === "center" ? "middle" : align === "right" ? "end" : "start";
   const anchor =
@@ -785,8 +813,59 @@ export function buildSvgString(cfg: RenderConfig): string {
   const overlaySvg =
     overlay &&
     ((overlay.showSliders && overlay.axes.length > 0) || overlay.showCss)
-      ? buildOverlaySvg(overlay, width, height, textBlock)
-      : "";
+      ? buildOverlaySvg(overlay, width, height)
+      : { sliders: "", css: "" };
+
+  // Glyph-outline layer — computed exactly ONCE per frame. It shares the
+  // text's auto layout origin (vAlign/align, no text drag offsets) and
+  // applies its OWN outline offsets, so the two layers move independently.
+  // Baseline uses the same 0.78em formula as the tspans above, keeping the
+  // outline and the baked text aligned inside the export.
+  const outlineSvg = cfg.outline
+    ? buildOutlineFrame({
+        sfnt: cfg.outline.sfnt,
+        text,
+        variation,
+        fontSize,
+        letterSpacing,
+        lineHeight,
+        align,
+        direction,
+        width,
+        height,
+        offsetX: cfg.outline.offsetX,
+        offsetY: cfg.outline.offsetY,
+        settings: cfg.outline.settings,
+        baseline: { mode: "svg" },
+        blockTop: computeTextBlock(
+          height,
+          fontSize,
+          lineHeight,
+          lines.length,
+          vAlign
+        ).top,
+      }).svg
+    : "";
+
+  // The text layer can be hidden independently of the outline layer: keep
+  // the <text> element for layout parity but make its fill transparent.
+  const textOpacityAttr = cfg.textVisible === false ? ' fill-opacity="0"' : "";
+
+  // Stack the four baked layers in the user's chosen z-order (bottom →
+  // top). The background rect always paints first; every other layer is
+  // placed by `layerOrder`. Missing/unknown ids are repaired by
+  // normalizeLayerOrder, so a stale config can never drop a layer.
+  const textLayerSvg = `<text class="vftxt" xml:space="preserve" text-anchor="${anchor}"${dirStyle ? ` style="${dirStyle}"` : ""}${textOpacityAttr}>${tspans}</text>`;
+  const layerSvg: Record<LayerId, string> = {
+    text: textLayerSvg,
+    outline: outlineSvg,
+    sliders: overlaySvg.sliders,
+    css: overlaySvg.css,
+  };
+  const stack = normalizeLayerOrder(cfg.layerOrder)
+    .map((id) => layerSvg[id])
+    .filter(Boolean)
+    .join("\n");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <defs>
@@ -800,8 +879,7 @@ export function buildSvgString(cfg: RenderConfig): string {
      exactly as typed, matching the DOM preview's white-space: pre. Without
      it the SVG whitespace processor collapses them and the export no longer
      looks like the preview. -->
-<text class="vftxt" xml:space="preserve" text-anchor="${anchor}"${dirStyle ? ` style="${dirStyle}"` : ""}>${tspans}</text>
-${overlaySvg}</svg>`;
+${stack}</svg>`;
 }
 
 // Loads an SVG string into an Image element and resolves when the image
@@ -1018,8 +1096,7 @@ export async function renderFrameToCanvas(
         cfg.vAlign
       ),
       cfg.textOffsetX,
-      cfg.textOffsetY,
-      cfg.height
+      cfg.textOffsetY
     );
     for (let i = 0; i < MAX_TEXT_RETRIES && !bandHasInk(img, cfg, band); i++) {
       await yieldTick();

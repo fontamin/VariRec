@@ -5,7 +5,7 @@
 خروجی را به‌صورت **GIF**، **MP4** یا **WebM** ذخیره کنید — بدون سرور، بدون
 آپلود، بدون نصب.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with Z.ai](https://img.shields.io/badge/built_with-Z.ai-blueviolet)
 
@@ -82,8 +82,10 @@ npm run dev
 
 سپس <http://localhost:3000> را باز کنید.
 
-فونت متغیر در دسترس ندارید؟ `public/test-vf.ttf` یک فونت نمونه‌ی کوچک با
-محورهای `wght` (۱۰۰–۹۰۰) و `wdth` (۲۵–۲۰۰) است که می‌توانید با آن تمرین کنید.
+فونت متغیر در دسترس ندارید؟ `public/test-vf.woff2` یک نسخه‌ی همراه‌شده از
+فونت متغیر وزیرمتن با محور `wght` (۱۰۰–۹۰۰) است — هم لاتین و هم فارسی را
+پوشش می‌دهد، پس برای امتحان کردن متن راست‌به‌چپ و لایه‌ی کانتور گلیف هم
+می‌شود از آن استفاده کرد. کافی است آن را روی قسمت بارگذاری بکشید.
 
 ## راهنمای استفاده
 

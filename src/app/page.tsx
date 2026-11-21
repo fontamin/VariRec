@@ -1,7 +1,27 @@
 "use client";
 
-import { Boxes, Github, Sparkles, Waves } from "lucide-react";
+import {
+  Boxes,
+  Github,
+  Sparkles,
+  Waves,
+} from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { useStudio } from "@/lib/studio-store";
+import { APP_VERSION } from "@/lib/version";
 import { PlaybackEngine } from "@/components/studio/playback-engine";
 import { DropZone } from "@/components/studio/drop-zone";
 import { PreviewStage } from "@/components/studio/preview-stage";
@@ -14,6 +34,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export default function Home() {
   const axes = useStudio((s) => s.axes);
   const fontLoaded = useStudio((s) => s.fontLoaded);
+  const reorderAxes = useStudio((s) => s.reorderAxes);
+
+  // Only the grip handle starts a drag (listeners live on the handle), but the
+  // distance constraint still keeps tiny touch jitters from becoming drags.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (over && active.id !== over.id) {
+      reorderAxes(String(active.id), String(over.id));
+    }
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-muted/30">
@@ -30,7 +65,7 @@ export default function Home() {
               <h1 className="flex items-center gap-1.5 text-sm font-bold tracking-tight">
                 VariRec
                 <span className="rounded-full border bg-muted/60 px-1.5 py-px text-[9px] font-medium leading-none text-muted-foreground">
-                  v1.1
+                  v{APP_VERSION}
                 </span>
               </h1>
               <p className="hidden text-[11px] text-muted-foreground sm:block">
@@ -93,13 +128,24 @@ export default function Home() {
                   <>
                     <AxisMoveModeControl />
                     <div className="max-h-[calc(100vh-10.5rem)] space-y-2 overflow-y-auto py-2.5 pr-1 [scrollbar-width:thin]">
-                      {axes.map((axis) => (
-                        <AxisControl key={axis.tag} axis={axis} />
-                      ))}
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <SortableContext
+                          items={axes.map((a) => a.tag)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {axes.map((axis) => (
+                            <AxisControl key={axis.tag} axis={axis} />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
                       <p className="px-1 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                        Toggle the switch on each axis to include it in the
-                        animation. Use the <em>live value</em> slider for axes
-                        you want to keep static.
+                        Drag the grip to reorder the axes — the preview sliders
+                        follow the same order. Toggle the switch to include an
+                        axis in the animation.
                       </p>
                     </div>
                   </>
@@ -129,8 +175,8 @@ export default function Home() {
       <footer className="mt-auto border-t bg-background/80">
         <div className="mx-auto flex max-w-[1500px] flex-col items-center justify-between gap-1.5 px-4 py-2.5 text-[11px] text-muted-foreground sm:flex-row sm:px-6">
           <p>
-            VariRec v1.1 · MIT License · fonts are parsed and rendered entirely
-            in your browser — nothing is uploaded.
+            VariRec v{APP_VERSION} · MIT License · fonts are parsed and rendered
+            entirely in your browser — nothing is uploaded.
           </p>
           <p className="flex items-center gap-1.5">
             <Sparkles className="size-2.5" />

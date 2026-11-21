@@ -22,6 +22,9 @@ export interface ParsedFont {
   cssFormat: string; // CSS @font-face format() string
   mime: string;
   buffer: ArrayBuffer; // original bytes
+  sfnt: ArrayBuffer; // decoded SFNT bytes (TTF/OTF). Identical to `buffer`
+  // for raw fonts; for WOFF/WOFF2 it is the reconstructed/decompressed font,
+  // handed to fontkit for glyph-outline extraction (see lib/outline.ts).
 }
 
 const KNOWN_AXIS_NAMES: Record<string, string> = {
@@ -110,6 +113,14 @@ function parseNameTableData(data: Uint8Array): Map<number, string> {
 
 // Parse a standalone `fvar` table into axes, resolving names from the given
 // nameID → string map.
+// fvar stores limits as 16.16 Fixed, so real fonts often carry noisy values
+// like 55.749903. The studio only needs one decimal: round at the single
+// parse point so the axes panel, the sliders, the overlay labels and the
+// export all share the same clean bounds.
+function roundAxisLimit(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
 function parseFvarTableData(
   data: Uint8Array,
   names: Map<number, string>
@@ -125,11 +136,22 @@ function parseFvarTableData(
     const o = arrStart + i * axisSize;
     if (o + 20 > view.byteLength) break;
     const tag = readTag(view, o);
-    const min = readFixed(view, o + 4);
-    const def = readFixed(view, o + 8);
-    const max = readFixed(view, o + 12);
+    const minRaw = readFixed(view, o + 4);
+    const defRaw = readFixed(view, o + 8);
+    const maxRaw = readFixed(view, o + 12);
     const nameID = view.getUint16(o + 18, false);
     const name = names.get(nameID) || KNOWN_AXIS_NAMES[tag] || tag;
+    // Rounding may collapse a hair-thin range (e.g. 0.04 → 0–0); in that
+    // pathological case keep the raw values instead of breaking the slider.
+    let min = roundAxisLimit(minRaw);
+    let max = roundAxisLimit(maxRaw);
+    let def = roundAxisLimit(defRaw);
+    if (minRaw < maxRaw && min === max) {
+      min = minRaw;
+      max = maxRaw;
+    }
+    if (max < min) max = min;
+    def = Math.min(max, Math.max(min, def));
     axes.push({ tag, name, min, max, default: def });
   }
   return axes;
@@ -391,5 +413,6 @@ export async function parseVariableFont(
     cssFormat,
     mime,
     buffer,
+    sfnt: parseBuffer,
   };
 }

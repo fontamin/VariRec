@@ -1,7 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
-import { RotateCcw, ArrowRight, Binary, Equal } from "lucide-react";
+import {
+  RotateCcw,
+  ArrowRight,
+  Binary,
+  Equal,
+  GripVertical,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useStudio } from "@/lib/studio-store";
 import type { AxisState } from "@/lib/studio-store";
 import type { AxisMoveMode } from "@/lib/studio-store-types";
@@ -22,9 +32,16 @@ function stepFor(min: number, max: number): number {
   return 1;
 }
 
+// Format with the step's precision, but never hide a one-decimal bound: fvar
+// limits are rounded to 1 decimal at parse time, so an integer-step axis
+// (range ≥ 50) must still show 55.5 instead of silently rounding to 56.
 function fmt(n: number, step: number): string {
   const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
-  return n.toFixed(decimals);
+  const rounded =
+    decimals === 0 && !Number.isInteger(n)
+      ? Math.round(n * 10) / 10
+      : parseFloat(n.toFixed(decimals));
+  return String(rounded);
 }
 
 // "000" → "001" → … sequence for small bit counts, shown as a hint.
@@ -102,14 +119,50 @@ export function AxisControl({ axis }: { axis: AxisState }) {
   const setAxisAnim = useStudio((s) => s.setAxisAnim);
   const toggleAnimate = useStudio((s) => s.toggleAxisAnimate);
   const resetAxis = useStudio((s) => s.resetAxisToDefault);
+  const setAxisVisible = useStudio((s) => s.setAxisVisible);
+
+  // Drag & drop ordering — only the grip activates the drag, so every other
+  // control (switch, sliders) keeps its normal pointer behaviour.
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: axis.tag });
 
   const step = useMemo(() => stepFor(axis.min, axis.max), [axis.min, axis.max]);
-  const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
 
   return (
-    <Card className="gap-0 p-0 py-0">
+    <Card
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
+      className={cn(
+        "gap-0 p-0 py-0 transition-opacity",
+        isDragging && "z-10 shadow-md ring-1 ring-foreground/20",
+        // Hidden axes (eye off) dim their whole block — they keep animating
+        // and stay in the CSS line, only the preview slider row goes away.
+        !axis.visible && "opacity-45"
+      )}
+    >
       <div className="flex items-center justify-between gap-2 border-b px-2.5 py-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1">
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label={`Reorder ${axis.name}`}
+            title="Drag to reorder axes"
+            className="-ml-0.5 flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="size-3" />
+          </button>
           <span className="rounded bg-foreground px-1 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-background">
             {axis.tag}
           </span>
@@ -124,6 +177,28 @@ export function AxisControl({ axis }: { axis: AxisState }) {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setAxisVisible(axis.tag, !axis.visible)}
+            aria-label={
+              axis.visible
+                ? `Hide ${axis.name} slider in preview`
+                : `Show ${axis.name} slider in preview`
+            }
+            aria-pressed={!axis.visible}
+            title={
+              axis.visible
+                ? "Hide this axis's slider in the preview"
+                : "Show this axis's slider in the preview"
+            }
+            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {axis.visible ? (
+              <Eye className="size-3" />
+            ) : (
+              <EyeOff className="size-3" />
+            )}
+          </button>
           <Switch
             checked={axis.animate}
             onCheckedChange={() => toggleAnimate(axis.tag)}

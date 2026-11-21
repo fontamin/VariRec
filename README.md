@@ -4,7 +4,7 @@
 browser. Drop in any variable font, animate its axes, and record the result as
 **GIF**, **MP4** or **WebM** — no server, no upload, no install.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built with Z.ai](https://img.shields.io/badge/built_with-Z.ai-blueviolet)
 
@@ -80,8 +80,10 @@ npm run dev
 
 Then open <http://localhost:3000>.
 
-No variable font at hand? `public/test-vf.ttf` is a tiny sample font with
-`wght` (100–900) and `wdth` (25–200) axes you can play with.
+No variable font at hand? `public/test-vf.woff2` is a bundled copy of the
+Vazirmatn variable font with a `wght` axis (100–900) — it covers both Latin
+and Persian, so it doubles as a demo for RTL text and the glyph-outline
+layer. Drag it onto the drop zone to try it.
 
 ## Usage guide
 

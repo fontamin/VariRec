@@ -10,40 +10,24 @@ import {
 } from "./renderer";
 
 // Build the overlay config used by both the JSX layout and the per-frame
-// style applier, so they always agree on geometry.
+// style applier, so they always agree on geometry. The user's overlay
+// settings group carries almost everything; the per-frame config adds the
+// panel + CSS-line drag offsets and the axis values to draw.
 export function overlayCfgFrom(s: StudioState): OverlayConfig {
+  const { enabled: _enabled, ...settings } = s.overlay;
   return {
-    showSliders: s.overlayShowSliders,
-    showName: s.overlayShowName,
-    showTag: s.overlayShowTag,
-    showMinMax: s.overlayShowMinMax,
-    showLiveValue: s.overlayShowLiveValue,
-    valueDecimals: s.overlayValueDecimals,
-    showCss: s.overlayShowCss,
-    centered: s.overlayCentered,
-    nameGap: s.overlayNameGap,
-    cssGap: s.overlayCssGap,
-    textGap: s.overlayTextGap,
-    thumbScale: s.overlayThumbScale,
-    thumbShape: s.overlayThumbShape,
-    font: s.overlayFont,
-    bold: s.overlayBold,
-    fontScale: s.overlayFontScale,
-    trackLenPct: s.overlayTrackLen,
-    color: s.overlayColor,
-    bgColor: s.overlayBgColor,
-    bgOpacity: s.overlayBgOpacity,
-    scale: s.overlayScale,
-    position: s.overlayPosition,
-    axisGapEm: s.overlayAxisGap,
+    ...settings,
     offsetX: s.panelOffsetX,
     offsetY: s.panelOffsetY,
+    cssOffsetX: s.cssOffsetX,
+    cssOffsetY: s.cssOffsetY,
     axes: s.axes.map((a) => ({
       tag: a.tag,
       name: a.name,
       value: a.current,
       min: a.min,
       max: a.max,
+      visible: a.visible,
     })),
   };
 }
@@ -60,7 +44,6 @@ export function textBlockFor(s: StudioState): TextBlock {
       s.vAlign
     ),
     s.textOffsetX,
-    s.textOffsetY,
-    s.canvasHeight
+    s.textOffsetY
   );
 }

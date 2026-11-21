@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { downloadBlob } from "@/lib/encoders";
+import { APP_VERSION } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 interface FormatOption {
@@ -263,7 +264,10 @@ export function RecordPanel() {
                       fetch(lastExportUrl)
                         .then((r) => r.blob())
                         .then((b) =>
-                          downloadBlob(b, lastExportName ?? "export")
+                          downloadBlob(
+                            b,
+                            lastExportName ?? `VariRec-v${APP_VERSION}.export`
+                          )
                         )
                     }
                   >

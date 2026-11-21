@@ -15,26 +15,42 @@
  * to the top so it never covers it, and vice versa.
  */
 
-import { type ComponentType, type ReactNode } from "react";
+import { useMemo, type ComponentType, type ReactNode } from "react";
 import {
   Type,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
   Palette,
   Maximize2,
   SlidersHorizontal,
   ArrowLeftRight,
   ArrowUpToLine,
   ArrowDownToLine,
-  AlignVerticalJustifyCenter,
+  Layers,
+  Spline,
+  Code,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useStudio } from "@/lib/studio-store";
+import { useShallow } from "zustand/react/shallow";
 import { computeOverlayMetrics } from "@/lib/renderer";
-import { overlayCfgFrom, textBlockFor } from "@/lib/studio-metrics";
+import { overlayCfgFrom } from "@/lib/studio-metrics";
 import type {
-  AlignMode,
-  VAlign,
+  LayerId,
   OverlayPosition,
   ThumbShape,
   TextDirection,
@@ -45,7 +61,6 @@ import {
   FONT_SIZE_MAX,
 } from "@/lib/studio-store-types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -67,6 +82,7 @@ import {
 } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { CanvasSizeInput } from "./canvas-size-input";
+import { ColorRow } from "./color-field";
 
 const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
   { label: "16:9", w: 960, h: 540 },
@@ -77,89 +93,78 @@ const CANVAS_PRESETS: { label: string; w: number; h: number }[] = [
 ];
 
 export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
-  const fontSize = useStudio((s) => s.fontSize);
-  const setFontSize = useStudio((s) => s.setFontSize);
-  const lineHeight = useStudio((s) => s.lineHeight);
-  const setLineHeight = useStudio((s) => s.setLineHeight);
-  const letterSpacing = useStudio((s) => s.letterSpacing);
-  const setLetterSpacing = useStudio((s) => s.setLetterSpacing);
-  const align = useStudio((s) => s.align);
-  const setAlign = useStudio((s) => s.setAlign);
-  const vAlign = useStudio((s) => s.vAlign);
-  const setVAlign = useStudio((s) => s.setVAlign);
-  const textDirection = useStudio((s) => s.textDirection);
-  const setTextDirection = useStudio((s) => s.setTextDirection);
-  const textColor = useStudio((s) => s.textColor);
-  const setTextColor = useStudio((s) => s.setTextColor);
-  const bgColor = useStudio((s) => s.bgColor);
-  const setBgColor = useStudio((s) => s.setBgColor);
-  const canvasWidth = useStudio((s) => s.canvasWidth);
-  const canvasHeight = useStudio((s) => s.canvasHeight);
-  const setCanvasSize = useStudio((s) => s.setCanvasSize);
-
-  const overlayEnabled = useStudio((s) => s.overlayEnabled);
-  const setOverlayEnabled = useStudio((s) => s.setOverlayEnabled);
-  const overlayShowSliders = useStudio((s) => s.overlayShowSliders);
-  const setOverlayShowSliders = useStudio((s) => s.setOverlayShowSliders);
-  const overlayShowName = useStudio((s) => s.overlayShowName);
-  const setOverlayShowName = useStudio((s) => s.setOverlayShowName);
-  const overlayShowTag = useStudio((s) => s.overlayShowTag);
-  const setOverlayShowTag = useStudio((s) => s.setOverlayShowTag);
-  const overlayShowMinMax = useStudio((s) => s.overlayShowMinMax);
-  const setOverlayShowMinMax = useStudio((s) => s.setOverlayShowMinMax);
-  const overlayShowLiveValue = useStudio((s) => s.overlayShowLiveValue);
-  const setOverlayShowLiveValue = useStudio((s) => s.setOverlayShowLiveValue);
-  const overlayValueDecimals = useStudio((s) => s.overlayValueDecimals);
-  const setOverlayValueDecimals = useStudio((s) => s.setOverlayValueDecimals);
-  const overlayShowCss = useStudio((s) => s.overlayShowCss);
-  const setOverlayShowCss = useStudio((s) => s.setOverlayShowCss);
-  const overlayCentered = useStudio((s) => s.overlayCentered);
-  const setOverlayCentered = useStudio((s) => s.setOverlayCentered);
-  const overlayNameGap = useStudio((s) => s.overlayNameGap);
-  const setOverlayNameGap = useStudio((s) => s.setOverlayNameGap);
-  const overlayCssGap = useStudio((s) => s.overlayCssGap);
-  const setOverlayCssGap = useStudio((s) => s.setOverlayCssGap);
-  const overlayAxisGap = useStudio((s) => s.overlayAxisGap);
-  const setOverlayAxisGap = useStudio((s) => s.setOverlayAxisGap);
-  const overlayTextGap = useStudio((s) => s.overlayTextGap);
-  const setOverlayTextGap = useStudio((s) => s.setOverlayTextGap);
-  const overlayThumbScale = useStudio((s) => s.overlayThumbScale);
-  const setOverlayThumbScale = useStudio((s) => s.setOverlayThumbScale);
-  const overlayThumbShape = useStudio((s) => s.overlayThumbShape);
-  const setOverlayThumbShape = useStudio((s) => s.setOverlayThumbShape);
-  const overlayFont = useStudio((s) => s.overlayFont);
-  const setOverlayFont = useStudio((s) => s.setOverlayFont);
-  const overlayFontScale = useStudio((s) => s.overlayFontScale);
-  const setOverlayFontScale = useStudio((s) => s.setOverlayFontScale);
-  const overlayBold = useStudio((s) => s.overlayBold);
-  const setOverlayBold = useStudio((s) => s.setOverlayBold);
-  const overlayTrackLen = useStudio((s) => s.overlayTrackLen);
-  const setOverlayTrackLen = useStudio((s) => s.setOverlayTrackLen);
-  const overlayColor = useStudio((s) => s.overlayColor);
-  const setOverlayColor = useStudio((s) => s.setOverlayColor);
-  const overlayBgColor = useStudio((s) => s.overlayBgColor);
-  const setOverlayBgColor = useStudio((s) => s.setOverlayBgColor);
-  const overlayBgOpacity = useStudio((s) => s.overlayBgOpacity);
-  const setOverlayBgOpacity = useStudio((s) => s.setOverlayBgOpacity);
-  const overlayScale = useStudio((s) => s.overlayScale);
-  const setOverlayScale = useStudio((s) => s.setOverlayScale);
-  const overlayPosition = useStudio((s) => s.overlayPosition);
-  const setOverlayPosition = useStudio((s) => s.setOverlayPosition);
+  // Grouped store subscriptions (useShallow) instead of ~70 individual
+  // useStudio calls. The overlay settings live in ONE object — it only ever
+  // changes when setOverlay replaces it, so a plain selector is exact.
+  const overlay = useStudio((s) => s.overlay);
+  // Glyph-outline layer settings + the text layer visibility (Layers tool).
+  const outline = useStudio((s) => s.outline);
+  const showTextLayer = useStudio((s) => s.showTextLayer);
+  // Axes: only subscribed as a dependency of the row-gap memo below.
   const axes = useStudio((s) => s.axes);
+  const {
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    textDirection,
+    textColor,
+    bgColor,
+  } = useStudio(
+    useShallow((s) => ({
+      fontSize: s.fontSize,
+      lineHeight: s.lineHeight,
+      letterSpacing: s.letterSpacing,
+      textDirection: s.textDirection,
+      textColor: s.textColor,
+      bgColor: s.bgColor,
+    }))
+  );
+  const { canvasWidth, canvasHeight } = useStudio(
+    useShallow((s) => ({
+      canvasWidth: s.canvasWidth,
+      canvasHeight: s.canvasHeight,
+    }))
+  );
+  const {
+    setOverlay,
+    setOutline,
+    setShowTextLayer,
+    setFontSize,
+    setLineHeight,
+    setLetterSpacing,
+    setTextDirection,
+    setTextColor,
+    setBgColor,
+    setCanvasSize,
+  } = useStudio(
+    useShallow((s) => ({
+      setOverlay: s.setOverlay,
+      setOutline: s.setOutline,
+      setShowTextLayer: s.setShowTextLayer,
+      setFontSize: s.setFontSize,
+      setLineHeight: s.setLineHeight,
+      setLetterSpacing: s.setLetterSpacing,
+      setTextDirection: s.setTextDirection,
+      setTextColor: s.setTextColor,
+      setBgColor: s.setBgColor,
+      setCanvasSize: s.setCanvasSize,
+    }))
+  );
 
   // Overlay metrics mirror the renderer exactly, so the Row gap ceiling
   // follows the canvas height: the gap may grow until the slider stack
   // (plus the CSS line) fills the vertical space between the margins.
-  const gapMetrics = computeOverlayMetrics(
-    canvasWidth,
-    canvasHeight,
-    overlayCfgFrom(useStudio.getState()),
-    textBlockFor(useStudio.getState())
-  );
-  const rowGapMaxEm = Math.max(
-    0.2,
-    Math.round((gapMetrics.axisGapMaxPx / gapMetrics.fontPx) * 10) / 10
-  );
+  // The ceiling depends only on the canvas size, the axes (count & range)
+  // and the overlay geometry knobs — memoized so unrelated re-renders
+  // (colors, toggles, popovers opening) don't recompute the metrics.
+  const rowGapMaxEm = useMemo(() => {
+    const s = useStudio.getState();
+    const m = computeOverlayMetrics(canvasWidth, canvasHeight, overlayCfgFrom(s));
+    return Math.max(
+      0.2,
+      Math.round((m.axisGapMaxPx / m.fontPx) * 10) / 10
+    );
+  }, [canvasWidth, canvasHeight, overlay, axes]);
 
   // `placeTop` is computed by the preview stage (which knows the exact
   // text-block and overlay-stack geometry) and passed in as a prop.
@@ -176,7 +181,10 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
       aria-label="Preview style editor"
     >
       <div className="flex items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-lg backdrop-blur-md">
-        <Tool icon={Type} title="Font size · line height · spacing">
+        <Tool
+          icon={Type}
+          title="Font size · line height · spacing · direction"
+        >
           <SlideRow
             label="Font size"
             value={fontSize}
@@ -204,52 +212,6 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
             onChange={setLetterSpacing}
             display={`${letterSpacing}`}
           />
-        </Tool>
-
-        <Tool icon={align === "center" ? AlignCenter : AlignLeft} title="Alignment">
-          <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">
-              Horizontal
-            </Label>
-            <ToggleGroup
-              type="single"
-              value={align}
-              onValueChange={(v) => v && setAlign(v as AlignMode)}
-              className="w-full"
-            >
-              <ToggleGroupItem value="left" className="flex-1" aria-label="Align left">
-                <AlignLeft className="size-3.5" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="center" className="flex-1" aria-label="Align center">
-                <AlignCenter className="size-3.5" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="right" className="flex-1" aria-label="Align right">
-                <AlignRight className="size-3.5" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">Vertical</Label>
-            <ToggleGroup
-              type="single"
-              value={vAlign}
-              onValueChange={(v) => v && setVAlign(v as VAlign)}
-              className="w-full"
-            >
-              <ToggleGroupItem value="top" className="flex-1 gap-1 text-[11px]" aria-label="Align top">
-                <ArrowUpToLine className="size-3" />
-                Top
-              </ToggleGroupItem>
-              <ToggleGroupItem value="middle" className="flex-1 gap-1 text-[11px]" aria-label="Align middle">
-                <AlignVerticalJustifyCenter className="size-3" />
-                Mid
-              </ToggleGroupItem>
-              <ToggleGroupItem value="bottom" className="flex-1 gap-1 text-[11px]" aria-label="Align bottom">
-                <ArrowDownToLine className="size-3" />
-                Bot
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">Direction</Label>
             <ToggleGroup
@@ -284,7 +246,8 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
               </ToggleGroupItem>
             </ToggleGroup>
             <p className="text-[10px] leading-snug text-muted-foreground">
-              Base direction of the text, baked into the export too.
+              Base direction of the text, baked into the export too. Align
+              everything by dragging directly in the preview.
             </p>
           </div>
         </Tool>
@@ -314,6 +277,124 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
           <p className="text-[10px] leading-snug text-muted-foreground">
             These colors are baked into the exported animation.
           </p>
+        </Tool>
+
+        <Tool icon={Layers} title="Layers · glyph outline" contentClassName="w-72" scrollable>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            <CheckRow
+              label="Text layer"
+              checked={showTextLayer}
+              onChange={setShowTextLayer}
+            />
+            <CheckRow
+              label="Glyph outline"
+              checked={outline.enabled}
+              onChange={(v) => setOutline({ enabled: v })}
+            />
+          </div>
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Any combination works. With the text layer off the text stays
+            editable — a transparent fill with a visible caret.
+          </p>
+
+          {/* Layer stack (z-index): frontmost first, reorder by dragging the
+              six-dot grip — the same pattern as the axes panel. Both the
+              preview and the export follow this order. */}
+          <div className="space-y-1 border-t pt-2">
+            <Label className="text-[11px] text-muted-foreground">
+              Layer order (z-index)
+            </Label>
+            <LayerStackList />
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              Top of the list paints in front of the layers below it — in the
+              preview and in the export.
+            </p>
+          </div>
+
+          {outline.enabled && (
+            <>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Display-only wireframe of the glyphs — follows the text, the
+                axes and every frame of the animation, and is baked into the
+                export. Drag it in the preview to move it independently.
+              </p>
+              <SlideRow
+                label="Scale"
+                value={outline.scale}
+                min={0.1}
+                max={10}
+                step={0.05}
+                onChange={(v) => setOutline({ scale: v })}
+                display={`${outline.scale.toFixed(2)}x`}
+              />
+              <div className="grid grid-cols-2 gap-x-3">
+                <SlideRow
+                  label="Stroke width"
+                  value={outline.strokeWidth}
+                  min={0.5}
+                  max={20}
+                  step={0.5}
+                  onChange={(v) => setOutline({ strokeWidth: v })}
+                  display={`${outline.strokeWidth}px`}
+                />
+                <SlideRow
+                  label="Node size"
+                  value={outline.nodeSize}
+                  min={2}
+                  max={24}
+                  step={1}
+                  onChange={(v) => setOutline({ nodeSize: v })}
+                  display={`${outline.nodeSize}px`}
+                />
+              </div>
+              <ShapePicker
+                label="Node shape"
+                value={outline.nodeShape}
+                onChange={(v) => setOutline({ nodeShape: v })}
+              />
+              <div className="grid grid-cols-2 gap-2 border-t pt-2">
+                <ColorRow
+                  label="Outline color"
+                  value={outline.strokeColor}
+                  onChange={(v) => setOutline({ strokeColor: v })}
+                />
+                <ColorRow
+                  label="Handle color"
+                  value={outline.handleColor}
+                  onChange={(v) => setOutline({ handleColor: v })}
+                />
+                <ColorRow
+                  label="Anchor fill"
+                  value={outline.anchorFill}
+                  onChange={(v) => setOutline({ anchorFill: v })}
+                />
+                <ColorRow
+                  label="Anchor border"
+                  value={outline.anchorStroke}
+                  onChange={(v) => setOutline({ anchorStroke: v })}
+                />
+                <ColorRow
+                  label="Control fill"
+                  value={outline.ctrlFill}
+                  onChange={(v) => setOutline({ ctrlFill: v })}
+                />
+                <ColorRow
+                  label="Control border"
+                  value={outline.ctrlStroke}
+                  onChange={(v) => setOutline({ ctrlStroke: v })}
+                />
+              </div>
+              <SlideRow
+                label="Handle width"
+                value={outline.handleWidth}
+                min={0}
+                max={10}
+                step={0.5}
+                onChange={(v) => setOutline({ handleWidth: v })}
+                display={`${outline.handleWidth}px`}
+              />
+            </>
+          )}
         </Tool>
 
         <Tool icon={Maximize2} title="Canvas size" contentClassName="w-72">
@@ -355,36 +436,27 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
               Show axes as sliders
             </Label>
             <Switch
-              checked={overlayEnabled}
-              onCheckedChange={setOverlayEnabled}
+              checked={overlay.enabled}
+              onCheckedChange={(v) => setOverlay({ enabled: v })}
               className="scale-90"
               aria-label="Show axes as sliders"
             />
           </div>
 
-          {overlayEnabled && (
+          {overlay.enabled && (
             <>
               <ShapePicker
-                value={overlayThumbShape}
-                onChange={setOverlayThumbShape}
+                value={overlay.thumbShape}
+                onChange={(v) => setOverlay({ thumbShape: v })}
               />
               <SlideRow
                 label="Thumb size"
-                value={overlayThumbScale}
+                value={overlay.thumbScale}
                 min={0.5}
                 max={2.5}
                 step={0.1}
-                onChange={setOverlayThumbScale}
-                display={`${Math.round(overlayThumbScale * 100)}%`}
-              />
-              <SlideRow
-                label="Gap to text"
-                value={overlayTextGap}
-                min={0}
-                max={12}
-                step={0.1}
-                onChange={setOverlayTextGap}
-                display={`${overlayTextGap.toFixed(1)}em`}
+                onChange={(v) => setOverlay({ thumbScale: v })}
+                display={`${Math.round(overlay.thumbScale * 100)}%`}
               />
 
               <div className="flex items-center justify-between">
@@ -393,17 +465,27 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                 </Label>
                 <ToggleGroup
                   type="single"
-                  value={overlayPosition}
-                  onValueChange={(v) => v && setOverlayPosition(v as OverlayPosition)}
+                  value={overlay.position}
+                  onValueChange={(v) =>
+                    v && setOverlay({ position: v as OverlayPosition })
+                  }
                   className="h-7"
                 >
-                  <ToggleGroupItem value="top" className="gap-1 px-2.5 text-[11px]">
+                  <ToggleGroupItem
+                    value="top"
+                    className="gap-1 px-2.5 text-[11px]"
+                    title="Anchor the slider stack to the canvas top edge"
+                  >
                     <ArrowUpToLine className="size-3" />
-                    Above
+                    Top
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="bottom" className="gap-1 px-2.5 text-[11px]">
+                  <ToggleGroupItem
+                    value="bottom"
+                    className="gap-1 px-2.5 text-[11px]"
+                    title="Anchor the slider stack to the canvas bottom edge"
+                  >
                     <ArrowDownToLine className="size-3" />
-                    Below
+                    Bottom
                   </ToggleGroupItem>
                 </ToggleGroup>
               </div>
@@ -411,118 +493,112 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
               <div className="grid grid-cols-2 gap-x-3">
                 <SlideRow
                   label="Panel size"
-                  value={overlayScale}
+                  value={overlay.scale}
                   min={0.6}
                   max={2}
                   step={0.1}
-                  onChange={setOverlayScale}
-                  display={`${Math.round(overlayScale * 100)}%`}
+                  onChange={(v) => setOverlay({ scale: v })}
+                  display={`${Math.round(overlay.scale * 100)}%`}
                 />
                 <SlideRow
                   label="Name gap"
-                  value={overlayNameGap}
+                  value={overlay.nameGap}
                   min={0.2}
                   max={3}
                   step={0.1}
-                  onChange={setOverlayNameGap}
-                  display={`${overlayNameGap.toFixed(1)}em`}
+                  onChange={(v) => setOverlay({ nameGap: v })}
+                  display={`${overlay.nameGap.toFixed(1)}em`}
                 />
                 <SlideRow
                   label="Text size"
-                  value={overlayFontScale}
+                  value={overlay.fontScale}
                   min={0.6}
                   max={2.5}
                   step={0.05}
-                  onChange={setOverlayFontScale}
-                  display={`${Math.round(overlayFontScale * 100)}%`}
+                  onChange={(v) => setOverlay({ fontScale: v })}
+                  display={`${Math.round(overlay.fontScale * 100)}%`}
                 />
                 <SlideRow
                   label="Track length"
-                  value={overlayTrackLen}
+                  value={overlay.trackLenPct}
                   min={20}
                   max={100}
                   step={1}
-                  onChange={setOverlayTrackLen}
-                  display={`${overlayTrackLen}%`}
+                  onChange={(v) => setOverlay({ trackLenPct: v })}
+                  display={`${overlay.trackLenPct}%`}
                 />
                 <SlideRow
                   label="Row gap"
-                  value={overlayAxisGap}
+                  value={overlay.axisGapEm}
                   min={0.2}
                   max={rowGapMaxEm}
                   step={0.1}
-                  onChange={setOverlayAxisGap}
-                  display={`${overlayAxisGap.toFixed(1)}em`}
-                />
-                <SlideRow
-                  label="CSS line gap"
-                  value={overlayCssGap}
-                  min={0.2}
-                  max={3}
-                  step={0.1}
-                  onChange={setOverlayCssGap}
-                  display={`${overlayCssGap.toFixed(1)}em`}
+                  onChange={(v) => setOverlay({ axisGapEm: v })}
+                  display={`${overlay.axisGapEm.toFixed(1)}em`}
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-x-2 gap-y-1 border-t pt-2">
                 <CheckRow
                   label="Slider"
-                  checked={overlayShowSliders}
-                  onChange={setOverlayShowSliders}
+                  checked={overlay.showSliders}
+                  onChange={(v) => setOverlay({ showSliders: v })}
                 />
                 <CheckRow
                   label="Name"
-                  checked={overlayShowName}
-                  onChange={setOverlayShowName}
+                  checked={overlay.showName}
+                  onChange={(v) => setOverlay({ showName: v })}
                 />
                 <CheckRow
                   label="Tag"
-                  checked={overlayShowTag}
-                  onChange={setOverlayShowTag}
+                  checked={overlay.showTag}
+                  onChange={(v) => setOverlay({ showTag: v })}
                 />
                 <CheckRow
                   label="Min–max"
-                  checked={overlayShowMinMax}
-                  onChange={setOverlayShowMinMax}
+                  checked={overlay.showMinMax}
+                  onChange={(v) => setOverlay({ showMinMax: v })}
                 />
                 <CheckRow
                   label="Value"
-                  checked={overlayShowLiveValue}
-                  onChange={setOverlayShowLiveValue}
+                  checked={overlay.showLiveValue}
+                  onChange={(v) => setOverlay({ showLiveValue: v })}
                 />
                 <CheckRow
                   label="CSS"
-                  checked={overlayShowCss}
-                  onChange={setOverlayShowCss}
+                  checked={overlay.showCss}
+                  onChange={(v) => setOverlay({ showCss: v })}
                 />
                 <CheckRow
                   label="Center"
-                  checked={overlayCentered}
-                  onChange={setOverlayCentered}
+                  checked={overlay.centered}
+                  onChange={(v) => setOverlay({ centered: v })}
                 />
                 <CheckRow
                   label="Bold"
-                  checked={overlayBold}
-                  onChange={setOverlayBold}
+                  checked={overlay.bold}
+                  onChange={(v) => setOverlay({ bold: v })}
                 />
               </div>
 
-              {(overlayShowLiveValue || overlayShowCss) && (
+              {(overlay.showLiveValue || overlay.showCss) && (
                 <SlideRow
                   label="Value decimals"
-                  value={overlayValueDecimals}
+                  value={overlay.valueDecimals}
                   min={0}
                   max={3}
                   step={1}
-                  onChange={setOverlayValueDecimals}
-                  display={String(overlayValueDecimals)}
+                  onChange={(v) => setOverlay({ valueDecimals: v })}
+                  display={String(overlay.valueDecimals)}
                 />
               )}
 
               <div className="space-y-1 border-t pt-2">
                 <Label className="text-[11px] text-muted-foreground">Font</Label>
-                <Select value={overlayFont} onValueChange={setOverlayFont}>
+                <Select
+                  value={overlay.font}
+                  onValueChange={(v) => v && setOverlay({ font: v })}
+                >
                   <SelectTrigger className="h-7 w-full text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -543,23 +619,23 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
               <div className="grid grid-cols-2 gap-2 border-t pt-2">
                 <ColorRow
                   label="Slider color"
-                  value={overlayColor}
-                  onChange={setOverlayColor}
+                  value={overlay.color}
+                  onChange={(v) => setOverlay({ color: v })}
                 />
                 <ColorRow
                   label="Panel bg"
-                  value={overlayBgColor}
-                  onChange={setOverlayBgColor}
+                  value={overlay.bgColor}
+                  onChange={(v) => setOverlay({ bgColor: v })}
                 />
               </div>
               <SlideRow
                 label="Panel opacity"
-                value={overlayBgOpacity}
+                value={overlay.bgOpacity}
                 min={0}
                 max={1}
                 step={0.05}
-                onChange={setOverlayBgOpacity}
-                display={`${Math.round(overlayBgOpacity * 100)}%`}
+                onChange={(v) => setOverlay({ bgOpacity: v })}
+                display={`${Math.round(overlay.bgOpacity * 100)}%`}
               />
             </>
           )}
@@ -570,6 +646,97 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
 }
 
 // ─── Building blocks ───────────────────────────────────────────────────────
+
+// Meta for the four stackable canvas layers (Layers tool list).
+const LAYER_META: Record<
+  LayerId,
+  { label: string; icon: ComponentType<{ className?: string }> }
+> = {
+  text: { label: "Text", icon: Type },
+  outline: { label: "Glyph outline", icon: Spline },
+  sliders: { label: "Sliders", icon: SlidersHorizontal },
+  css: { label: "CSS code", icon: Code },
+};
+
+// The layer-stack list with drag & drop reordering — the same pattern as
+// the axes panel: only the six-dot grip starts a drag (4 px activation
+// distance), everything else stays clickable. The list runs FRONT first,
+// so dragging a row upward brings that layer toward the front.
+function LayerStackList() {
+  const layerOrder = useStudio((s) => s.layerOrder);
+  const reorderLayers = useStudio((s) => s.reorderLayers);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  // Frontmost first: reverse the store's bottom → top array for display.
+  const display = [...layerOrder].reverse();
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (over && active.id !== over.id) {
+      reorderLayers(String(active.id) as LayerId, String(over.id) as LayerId);
+    }
+  };
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={display} strategy={verticalListSortingStrategy}>
+        <div className="space-y-1">
+          {display.map((id) => (
+            <LayerStackRow key={id} id={id} />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+// One row of the layer-stack list: six-dot grip, icon and label. Drag the
+// grip to restack the layers; the keyboard path (Space to pick up, arrows
+// to move, Space to drop) works through the same grip.
+function LayerStackRow({ id }: { id: LayerId }) {
+  const meta = LAYER_META[id];
+  const Icon = meta.icon;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md border bg-background px-2 py-1",
+        isDragging && "z-10 shadow-md ring-1 ring-foreground/20"
+      )}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${meta.label} layer`}
+        title="Drag to reorder layers"
+        className="-ml-0.5 flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-3" />
+      </button>
+      <Icon className="size-3 shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate text-[11px]">{meta.label}</span>
+    </div>
+  );
+}
 
 function Tool({
   icon: Icon,
@@ -654,45 +821,18 @@ function SlideRow({
   );
 }
 
-function ColorRow({
-  label,
+function ShapePicker({
   value,
   onChange,
+  label = "Thumb shape",
 }: {
-  label: string;
-  value: string;
-  onChange: (c: string) => void;
+  value: ThumbShape;
+  onChange: (s: ThumbShape) => void;
+  label?: string;
 }) {
   return (
     <div className="space-y-1">
       <Label className="text-[11px]">{label}</Label>
-      <div className="flex items-center gap-1.5 rounded border px-1.5 py-0.5">
-        <span
-          className="size-4 shrink-0 rounded-sm border"
-          style={{ background: value }}
-        />
-        <Input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-5 flex-1 cursor-pointer border-0 bg-transparent p-0"
-          aria-label={label}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ShapePicker({
-  value,
-  onChange,
-}: {
-  value: ThumbShape;
-  onChange: (s: ThumbShape) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-[11px]">Thumb shape</Label>
       <div className="grid grid-cols-4 gap-1">
         {THUMB_SHAPES.map((s) => (
           <button
