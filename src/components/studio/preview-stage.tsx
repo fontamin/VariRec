@@ -109,14 +109,16 @@ export function PreviewStage() {
   } | null>(null);
   const rowRefs = useRef(new Map<string, SliderRefs>());
   const [previewW, setPreviewW] = useState(800);
-  // Stage area wrapper — its width is the space Fit-to-width zooms into.
+  // Stage area wrapper — its measured box is the space Fit zooms into.
   const stageAreaRef = useRef<HTMLDivElement>(null);
-  // Preview zoom. "fit-width" / "fit-height" auto-scale the stage into the
-  // available space; a number renders the canvas at that multiple of its
+  // Preview zoom. "fit" auto-scales the stage to fit ENTIRELY inside the
+  // available space (contain — neither dimension overflows, so a canvas
+  // size change always lands fully visible without turning the area into
+  // a scroll box); a number renders the canvas at that multiple of its
   // natural pixel size. Preview-only: exports always render at the full
   // canvas resolution.
-  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit-width");
-  // Available space for the Fit modes: column width × the remaining screen
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit");
+  // Available space for the Fit zoom: column width × the remaining screen
   // height below the stage (document-offset based, scroll-invariant).
   const [fitAvail, setFitAvail] = useState<{ w: number; h: number } | null>(
     null
@@ -579,13 +581,13 @@ export function PreviewStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Measure the space the Fit modes zoom into. On the desktop app shell
+  // Measure the space the Fit zoom scales into. On the desktop app shell
   // (lg+) the stage area is a bounded flex box — its measured client box IS
-  // the space Fit H fills (the panels below stay visible). Below lg the page
+  // the space Fit fills (the panels below stay visible). Below lg the page
   // flows normally, so height falls back to the remaining SCREEN height
   // below the stage (document-offset based, scroll-invariant). Zooms bigger
   // than this space scroll inside the stage area on lg (and grow the page
-  // below lg) — these numbers only define the two Fit scales.
+  // below lg) — these numbers only define the Fit scale.
   useEffect(() => {
     const compute = () => {
       const el = stageAreaRef.current;
@@ -801,18 +803,18 @@ export function PreviewStage() {
 
   const k = previewW / canvasWidth; // px scale preview↔canvas
 
-  // Effective preview zoom. The Fit modes resolve from the measured space
-  // (fit-width → column width; fit-height → remaining screen height); an
-  // explicit mode is used as-is. Until the first measurement lands, fall
-  // back to the fill-width behaviour the stage always had.
-  const fitWidthZoom = fitAvail ? fitAvail.w / canvasWidth : null;
-  const fitHeightZoom = fitAvail ? fitAvail.h / canvasHeight : null;
+  // Effective preview zoom. Fit resolves from the measured space and
+  // CONTAINS: the smaller of the two ratios wins, so the whole canvas is
+  // always visible and the stage area never grows scrollbars under Fit
+  // (which would re-measure a smaller box and oscillate the size). An
+  // explicit mode is used as-is and may overflow (scroll) by design. Until
+  // the first measurement lands, fall back to the fill-width behaviour the
+  // stage always had.
+  const fitZoom = fitAvail
+    ? Math.min(fitAvail.w / canvasWidth, fitAvail.h / canvasHeight)
+    : null;
   const zoom =
-    zoomMode === "fit-width"
-      ? fitWidthZoom ?? previewW / canvasWidth
-      : zoomMode === "fit-height"
-        ? fitHeightZoom ?? previewW / canvasWidth
-        : zoomMode;
+    zoomMode === "fit" ? fitZoom ?? previewW / canvasWidth : zoomMode;
   const stageW = Math.max(1, Math.floor(canvasWidth * zoom));
   const stageH = Math.max(1, Math.floor(canvasHeight * zoom));
 
@@ -922,10 +924,10 @@ export function PreviewStage() {
       </div>
 
       {/* Stage area — the card keeps the canvas' exact aspect at any zoom.
-          On the desktop shell the area is a bounded flex box: Fit modes size
-          the card INTO it (auto margins centre a smaller card), while an
-          explicit zoom bigger than the area scrolls inside it. Below lg the
-          card grows in the normal page flow. */}
+          On the desktop shell the area is a bounded flex box: Fit sizes the
+          card INTO it (auto margins centre a smaller card) and never
+          overflows, while an explicit zoom bigger than the area scrolls
+          inside it. Below lg the card grows in the normal page flow. */}
       <div
         ref={stageAreaRef}
         className="flex w-full flex-col lg:min-h-[120px] lg:flex-1 lg:overflow-auto"

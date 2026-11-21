@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-// Preview zoom mode: the two Fit modes auto-scale the stage into the
-// available space (column width / available height); a number
-// renders the canvas at exactly that multiple of its natural pixel size.
-// Preview-only — the export always renders at the full canvas resolution.
-export type ZoomMode = "fit-width" | "fit-height" | number;
+// Preview zoom mode: "fit" auto-scales the stage to fit ENTIRELY inside the
+// available space (contain — neither dimension ever overflows, so the fit
+// never turns the stage area into a scroll box); a number renders the canvas
+// at exactly that multiple of its natural pixel size (may overflow and
+// scroll inside the stage area). Preview-only — the export always renders
+// at the full canvas resolution.
+export type ZoomMode = "fit" | number;
 
 const PRESETS = [0.2, 0.5, 1, 2] as const;
 const MIN_ZOOM = 0.05;
@@ -58,12 +60,7 @@ export function PreviewZoomControl({
     }
   };
 
-  const label =
-    mode === "fit-width"
-      ? "Fit W"
-      : mode === "fit-height"
-        ? "Fit H"
-        : `${Math.round(effective * 100)}%`;
+  const label = mode === "fit" ? "Fit" : `${Math.round(effective * 100)}%`;
 
   const applyCustom = () => {
     if (parsed == null) return;
@@ -93,20 +90,11 @@ export function PreviewZoomControl({
       >
         <div role="listbox" aria-label="Preview zoom">
           <ZoomOption
-            active={mode === "fit-width"}
-            label="Fit W"
-            hint="fills the column"
+            active={mode === "fit"}
+            label="Fit"
+            hint="fits the space"
             onClick={() => {
-              onChange("fit-width");
-              setOpen(false);
-            }}
-          />
-          <ZoomOption
-            active={mode === "fit-height"}
-            label="Fit H"
-            hint="fills the height"
-            onClick={() => {
-              onChange("fit-height");
+              onChange("fit");
               setOpen(false);
             }}
           />

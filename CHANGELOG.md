@@ -5,6 +5,28 @@ All notable changes to **VariRec** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] — 2026-11-21
+
+A fit-and-focus release: the preview always lands fully visible, and the
+header loses the last unrelated chrome.
+
+### Fixed
+
+- **Fit never overflows** — the Fit zoom now CONTAINS: it takes the smaller
+  of the width and height ratios, so the whole canvas is always visible in
+  the preview area. Previously the Fit modes filled only one dimension, so
+  a tall or wide canvas overflowed the other one — the stage area turned
+  into a scrollable container (and with classic desktop scrollbars the
+  re-measure loop could visibly oscillate the preview size, the "jump"
+  seen when maximising the window). Changing the canvas size now always
+  lands the preview fully inside the space — no inner scroll box, no jump.
+  Explicit zooms (0.2×–2×, custom) still overflow and scroll on purpose.
+
+### Removed
+
+- **Header fonts link** — the "Find open-source variable fonts" icon in
+  the header is gone; the header keeps only the client-side badge.
+
 ## [1.2.2] — 2026-11-21
 
 The headline of this release is a **calmer, app-like studio**: the canvas
@@ -196,6 +218,7 @@ set of export and editing fixes discovered while using it.
 - FOIT-safe SVG frame rendering (settle-poll + ink backstop).
 - 100% client-side — nothing is ever uploaded.
 
+[1.2.3]: https://github.com/fontamin/VariRec/releases/tag/v1.2.3
 [1.2.2]: https://github.com/fontamin/VariRec/releases/tag/v1.2.2
 [1.2.1]: https://github.com/fontamin/VariRec/releases/tag/v1.2.1
 [1.2.0]: https://github.com/fontamin/VariRec/releases/tag/v1.2.0

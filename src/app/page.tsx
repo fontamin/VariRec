@@ -2,7 +2,6 @@
 
 import {
   Boxes,
-  Github,
   Sparkles,
   Waves,
 } from "lucide-react";
@@ -80,16 +79,6 @@ export default function Home() {
               <Sparkles className="size-2.5" />
               100% client-side
             </span>
-            <a
-              href="https://github.com/google/fonts/tree/main/ofl"
-              target="_blank"
-              rel="noreferrer"
-              className="flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Find variable fonts"
-              title="Find open-source variable fonts"
-            >
-              <Github className="size-3.5" />
-            </a>
           </div>
         </div>
       </header>
