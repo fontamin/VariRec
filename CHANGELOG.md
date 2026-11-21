@@ -5,6 +5,24 @@ All notable changes to **VariRec** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-11-21
+
+### Added
+
+- **Preview zoom** — a zoom control between the snap toggle and the canvas
+  size indicator scales the preview without touching the export resolution.
+  Options: **Fit W** (fit to width — fills the preview column, the default
+  view), **Fit H** (fit to height — fills the remaining screen height),
+  0.2×, 0.5×, 1×, 2× and a custom ratio (accepts `0.75` or `75`). Explicit
+  zooms render the canvas at exactly that multiple of its natural pixel
+  size. There is no inner scroll box: zoomed-out views centre the card in
+  the available space, zoomed-in views let the card itself grow in the page
+  flow. Zoom is preview-only — exports always render at the full canvas
+  resolution.
+- **fontamin branding** — the footer credits line now ends with an
+  "A fontamin product" mark (theme-aware SVG wordmark) linking to the
+  project repository at github.com/fontamin/VariRec.
+
 ## [1.2.0] — 2026-11-21
 
 The headline of this release is a **full free-placement editor**: every layer
@@ -146,6 +164,7 @@ set of export and editing fixes discovered while using it.
 - FOIT-safe SVG frame rendering (settle-poll + ink backstop).
 - 100% client-side — nothing is ever uploaded.
 
+[1.2.1]: https://github.com/fontamin/VariRec/releases/tag/v1.2.1
 [1.2.0]: https://github.com/fontamin/VariRec/releases/tag/v1.2.0
 [1.1.0]: https://github.com/fontamin/VariRec/releases/tag/v1.1.0
 [1.0.0]: https://github.com/fontamin/VariRec/releases/tag/v1.0.0

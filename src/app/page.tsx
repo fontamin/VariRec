@@ -22,6 +22,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useStudio } from "@/lib/studio-store";
 import { APP_VERSION } from "@/lib/version";
+import { FontaminLogo } from "@/components/fontamin-logo";
 import { PlaybackEngine } from "@/components/studio/playback-engine";
 import { DropZone } from "@/components/studio/drop-zone";
 import { PreviewStage } from "@/components/studio/preview-stage";
@@ -178,9 +179,22 @@ export default function Home() {
             VariRec v{APP_VERSION} · MIT License · fonts are parsed and rendered
             entirely in your browser — nothing is uploaded.
           </p>
-          <p className="flex items-center gap-1.5">
+          <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
             <Sparkles className="size-2.5" />
-            Built with Z.ai · Powered by WebCodecs &amp; gifenc
+            <span>Built with Z.ai · Powered by WebCodecs &amp; gifenc</span>
+            <span aria-hidden className="text-border">
+              ·
+            </span>
+            <a
+              href="https://github.com/fontamin/VariRec"
+              target="_blank"
+              rel="noreferrer"
+              title="fontamin on GitHub — github.com/fontamin/VariRec"
+              className="flex items-center gap-1.5 font-medium text-foreground/75 transition-colors hover:text-foreground"
+            >
+              <FontaminLogo className="size-3.5" />
+              A fontamin product
+            </a>
           </p>
         </div>
       </footer>
