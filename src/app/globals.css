@@ -120,3 +120,36 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Flexible Stage (v1.2.3) — the preview canvas contain-fits its stage with
+   pure CSS, so no JS measure loop can oscillate the size (the old "jump").
+   The stage area is a CSS size container on desktop; cq units therefore
+   resolve against the STAGE (not the viewport). Fit width is the smaller
+   of "full width" and "full height × canvas ratio"; height follows via
+   aspect-ratio. Below lg the page flows normally and the card fills the
+   column width. The ratio vars are set inline by the preview stage. */
+.stage-fit-card {
+  aspect-ratio: var(--canvas-ar, 16 / 9);
+}
+@media (min-width: 1024px) {
+  .stage-fit-card {
+    width: min(100cqw, calc(100cqh * var(--canvas-r, 1.7778)));
+    max-width: 100%;
+    max-height: 100%;
+  }
+}
+@media (max-width: 1023.98px) {
+  .stage-fit-card {
+    width: 100%;
+  }
+}
+
+/* Neutral dotted backdrop of the stage — foreground-tinted so it reads in
+   light and dark mode without hardcoding a color. */
+.stage-dots {
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--foreground) 7%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 16px 16px;
+}

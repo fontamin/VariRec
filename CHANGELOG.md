@@ -7,25 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.3] — 2026-11-21
 
-A fit-and-focus release: the preview always lands fully visible, and the
-header loses the last unrelated chrome.
+A layout release: the center column becomes a fixed "flexible Stage", the
+export moves to the header, and the fit logic goes fully CSS so nothing can
+jump or scroll.
+
+### Changed
+
+- **Flexible Stage** — the center column is now a Stage that always fills
+  the space between header and footer; its size no longer depends on the
+  canvas aspect ratio. The canvas itself contain-fits inside with pure CSS
+  (`aspect-ratio` + `max-width`/`max-height`, sized through container-query
+  units): portrait canvases fill the stage height, landscape ones fill the
+  width, and every ratio (9:16, 1:1, 16:9, 4:5, …) lands fully visible with
+  no overflow and no inner scroll box. The stage backdrop gets a neutral
+  dotted finish so the empty space reads as workspace.
+- **Export in the header** — the Record & Export card leaves the center
+  column. A primary "Export" button in the header opens a dropdown with the
+  GIF / MP4 / WebM actions, the recording progress (with cancel) and the
+  last-export preview. The GIF fps note (frame delays are stored in 1/100 s
+  steps) moved into a tooltip on the GIF entry.
+- **Compact transport bar** — Play/Pause, Stop, step and the timeline sit in
+  one fixed 44 px row pinned below the stage. It no longer hugs the canvas
+  edge and does not move when the canvas ratio changes.
+- **Stage zoom control** — the Fit / 100% zoom pill now lives in the stage's
+  top-left corner (pinned above the scrollable canvas area, so an explicit
+  zoom never scrolls it away).
+- **Shorter side panels** — the long helper texts moved into tooltips: the
+  Repeat math and the in-preview editing note in the Animation panel, the
+  direction note in the Typography tool, and the reorder hint in the
+  Variation Axes panel.
 
 ### Fixed
 
-- **Fit never overflows** — the Fit zoom now CONTAINS: it takes the smaller
-  of the width and height ratios, so the whole canvas is always visible in
-  the preview area. Previously the Fit modes filled only one dimension, so
-  a tall or wide canvas overflowed the other one — the stage area turned
-  into a scrollable container (and with classic desktop scrollbars the
-  re-measure loop could visibly oscillate the preview size, the "jump"
-  seen when maximising the window). Changing the canvas size now always
-  lands the preview fully inside the space — no inner scroll box, no jump.
-  Explicit zooms (0.2×–2×, custom) still overflow and scroll on purpose.
+- **Fit never jumps** — Fit is resolved entirely in CSS (see Flexible
+  Stage), so the JS measure loop that could oscillate the preview size (the
+  "jump" seen when maximising the window, amplified by classic desktop
+  scrollbars turning the stage into a scroll container) is gone. Explicit
+  zooms (0.2×–2×, custom) still overflow and scroll on purpose.
 
 ### Removed
 
 - **Header fonts link** — the "Find open-source variable fonts" icon in
   the header is gone; the header keeps only the client-side badge.
+- **Record & Export card** — replaced by the header Export dropdown.
 
 ## [1.2.2] — 2026-11-21
 

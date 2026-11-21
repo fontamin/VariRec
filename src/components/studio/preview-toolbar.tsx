@@ -28,6 +28,7 @@ import {
   Code,
   GripVertical,
   ChevronDown,
+  Info,
 } from "lucide-react";
 import {
   DndContext,
@@ -47,6 +48,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useStudio } from "@/lib/studio-store";
 import { useShallow } from "zustand/react/shallow";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { computeOverlayMetrics } from "@/lib/renderer";
 import { overlayCfgFrom } from "@/lib/studio-metrics";
 import type {
@@ -215,7 +221,21 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
             display={`${letterSpacing}`}
           />
           <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">Direction</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Label
+                  tabIndex={0}
+                  className="flex w-fit cursor-help items-center gap-1 text-[11px] text-muted-foreground"
+                >
+                  Direction
+                  <Info className="size-3" />
+                </Label>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-60 text-balance">
+                Base direction of the text, baked into the export too. Align
+                everything by dragging directly in the preview.
+              </TooltipContent>
+            </Tooltip>
             <ToggleGroup
               type="single"
               value={textDirection}
@@ -247,10 +267,6 @@ export function PreviewToolbar({ placeTop }: { placeTop: boolean }) {
                 RTL
               </ToggleGroupItem>
             </ToggleGroup>
-            <p className="text-[10px] leading-snug text-muted-foreground">
-              Base direction of the text, baked into the export too. Align
-              everything by dragging directly in the preview.
-            </p>
           </div>
         </Tool>
 

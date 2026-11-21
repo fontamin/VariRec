@@ -9,6 +9,7 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  Info,
 } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -23,6 +24,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function stepFor(min: number, max: number): number {
@@ -73,10 +79,27 @@ export function AxisMoveModeControl() {
   return (
     <div className="space-y-1.5 border-b px-2.5 pb-2.5 pt-3">
       <div className="flex items-center justify-between gap-2">
-        <Label className="flex items-center gap-1.5 text-[11px]">
-          <Binary className="size-3 text-muted-foreground" />
-          Movement
-        </Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Label
+              tabIndex={0}
+              className="flex w-fit cursor-help items-center gap-1.5 text-[11px]"
+            >
+              <Binary className="size-3 text-muted-foreground" />
+              Movement
+              <Info className="size-3 text-muted-foreground/70" />
+            </Label>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-60 text-balance">
+            {mode === "sync"
+              ? "All animated axes move together on one shared timeline."
+              : animatedCount === 0
+                ? "Animate axes to include them in the binary count — each animated axis is one bit, the top axis being the least significant."
+                : animatedCount === 1
+                  ? "One animated axis sweeps out and back each cycle. Animate more axes to build a binary pattern (top axis = least significant bit)."
+                  : `Animated axes count in binary — the top axis is the least significant bit. ${binaryPattern(animatedCount)}`}
+          </TooltipContent>
+        </Tooltip>
         <ToggleGroup
           type="single"
           value={mode}
@@ -101,15 +124,6 @@ export function AxisMoveModeControl() {
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-      <p className="text-[10px] leading-snug text-muted-foreground">
-        {mode === "sync"
-          ? "All animated axes move together on one shared timeline."
-          : animatedCount === 0
-            ? "Animate axes to include them in the binary count — each animated axis is one bit, the top axis being the least significant."
-            : animatedCount === 1
-              ? "One animated axis sweeps out and back each cycle. Animate more axes to build a binary pattern (top axis = least significant bit)."
-              : `Animated axes count in binary — the top axis is the least significant bit. ${binaryPattern(animatedCount)}`}
-      </p>
     </div>
   );
 }

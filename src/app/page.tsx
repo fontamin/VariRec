@@ -2,6 +2,7 @@
 
 import {
   Boxes,
+  Info,
   Sparkles,
   Waves,
 } from "lucide-react";
@@ -27,9 +28,14 @@ import { DropZone } from "@/components/studio/drop-zone";
 import { PreviewStage } from "@/components/studio/preview-stage";
 import { AnimationPanel } from "@/components/studio/animation-panel";
 import { PlaybackControls } from "@/components/studio/playback-controls";
-import { RecordPanel } from "@/components/studio/record-panel";
+import { ExportMenu } from "@/components/studio/export-menu";
 import { AxisControl, AxisMoveModeControl } from "@/components/studio/axis-control";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function Home() {
   const axes = useStudio((s) => s.axes);
@@ -79,13 +85,14 @@ export default function Home() {
               <Sparkles className="size-2.5" />
               100% client-side
             </span>
+            <ExportMenu />
           </div>
         </div>
       </header>
 
       {/* Main — the desktop (lg+) shell gives every column the full remaining
-          height: side panels scroll internally and the center column keeps
-          the preview, transport and export visible without page scrolling. */}
+          height: side panels scroll internally and the center column is a
+          fixed Stage (preview + transport) without page scrolling. */}
       <main className="mx-auto grid w-full max-w-[1500px] flex-1 grid-cols-1 gap-3 px-4 py-3 sm:px-6 lg:min-h-0 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)]">
         {/* Left column — source & animation */}
         <aside className="space-y-3 [scrollbar-width:thin] lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-0.5">
@@ -93,11 +100,13 @@ export default function Home() {
           <AnimationPanel />
         </aside>
 
-        {/* Center column — preview & transport */}
-        <section className="space-y-3 [scrollbar-width:thin] lg:col-span-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-y-auto lg:pr-0.5">
+        {/* Center column — the flexible Stage + transport bar. The stage
+            always fills the space between header and footer; the canvas
+            contain-fits inside it (CSS aspect-ratio), so the layout never
+            depends on the canvas ratio. */}
+        <section className="flex flex-col gap-2 lg:col-span-6 lg:min-h-0">
           <PreviewStage />
           <PlaybackControls />
-          <RecordPanel />
         </section>
 
         {/* Right column — axes */}
@@ -109,8 +118,26 @@ export default function Home() {
                   <Boxes className="size-3.5 text-muted-foreground" />
                   Variation Axes
                 </span>
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  {axes.length}
+                <span className="flex items-center gap-1.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="About the axes panel"
+                        className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <Info className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" className="max-w-60 text-balance">
+                      Drag the grip to reorder the axes — the preview sliders
+                      follow the same order. Toggle the switch to include an
+                      axis in the animation.
+                    </TooltipContent>
+                  </Tooltip>
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {axes.length}
+                  </span>
                 </span>
               </CardTitle>
             </CardHeader>
@@ -134,11 +161,6 @@ export default function Home() {
                           ))}
                         </SortableContext>
                       </DndContext>
-                      <p className="px-1 pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                        Drag the grip to reorder the axes — the preview sliders
-                        follow the same order. Toggle the switch to include an
-                        axis in the animation.
-                      </p>
                     </div>
                   </>
                 ) : (

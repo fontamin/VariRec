@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type CSSProperties,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -109,21 +110,15 @@ export function PreviewStage() {
   } | null>(null);
   const rowRefs = useRef(new Map<string, SliderRefs>());
   const [previewW, setPreviewW] = useState(800);
-  // Stage area wrapper — its measured box is the space Fit zooms into.
-  const stageAreaRef = useRef<HTMLDivElement>(null);
-  // Preview zoom. "fit" auto-scales the stage to fit ENTIRELY inside the
-  // available space (contain — neither dimension overflows, so a canvas
-  // size change always lands fully visible without turning the area into
-  // a scroll box); a number renders the canvas at that multiple of its
-  // natural pixel size. Preview-only: exports always render at the full
-  // canvas resolution.
+  // Preview zoom. "fit" sizes the canvas with pure CSS to contain inside
+  // the stage (aspect-ratio + max-width/max-height via cq units — see
+  // .stage-fit-card in globals.css), so neither dimension ever overflows:
+  // a canvas-size change or window resize always lands fully visible and
+  // the stage itself never resizes with the ratio. A number renders the
+  // canvas at that multiple of its natural pixel size (may overflow and
+  // scroll inside the stage). Preview-only: exports always render at the
+  // full canvas resolution.
   const [zoomMode, setZoomMode] = useState<ZoomMode>("fit");
-  // Available space for the Fit zoom: column width × the remaining screen
-  // height below the stage (document-offset based, scroll-invariant).
-  const [fitAvail, setFitAvail] = useState<{ w: number; h: number } | null>(
-    null
-  );
-  const fitAvailRef = useRef<{ w: number; h: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(true);
   // Measured VISUAL (ink) bounding box of the text (canvas px) — the edit
@@ -581,56 +576,6 @@ export function PreviewStage() {
     return () => ro.disconnect();
   }, []);
 
-  // Measure the space the Fit zoom scales into. On the desktop app shell
-  // (lg+) the stage area is a bounded flex box — its measured client box IS
-  // the space Fit fills (the panels below stay visible). Below lg the page
-  // flows normally, so height falls back to the remaining SCREEN height
-  // below the stage (document-offset based, scroll-invariant). Zooms bigger
-  // than this space scroll inside the stage area on lg (and grow the page
-  // below lg) — these numbers only define the Fit scale.
-  useEffect(() => {
-    const compute = () => {
-      const el = stageAreaRef.current;
-      if (!el) return;
-      const w = el.clientWidth;
-      const lg = window.matchMedia("(min-width: 1024px)").matches;
-      const h = lg
-        ? Math.max(120, Math.floor(el.clientHeight))
-        : Math.max(
-            160,
-            Math.floor(
-              window.innerHeight -
-                (el.getBoundingClientRect().top + window.scrollY) -
-                12
-            )
-          );
-      const prev = fitAvailRef.current;
-      if (prev && Math.abs(prev.w - w) < 0.5 && Math.abs(prev.h - h) < 0.5)
-        return;
-      const next = { w, h };
-      fitAvailRef.current = next;
-      setFitAvail(next);
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    if (stageAreaRef.current) ro.observe(stageAreaRef.current);
-    window.addEventListener("resize", compute);
-    // Re-measure when the layout flips between the app shell (lg) and the
-    // flowing page below it.
-    const mq = window.matchMedia("(min-width: 1024px)");
-    mq.addEventListener("change", compute);
-    // Late re-measures: fonts / panels below settle after the first paint.
-    const t1 = window.setTimeout(compute, 250);
-    const t2 = window.setTimeout(compute, 900);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", compute);
-      mq.removeEventListener("change", compute);
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-    };
-  }, [fontLoaded]);
-
   useLayoutEffect(() => {
     applyStyles();
   });
@@ -803,20 +748,13 @@ export function PreviewStage() {
 
   const k = previewW / canvasWidth; // px scale preview↔canvas
 
-  // Effective preview zoom. Fit resolves from the measured space and
-  // CONTAINS: the smaller of the two ratios wins, so the whole canvas is
-  // always visible and the stage area never grows scrollbars under Fit
-  // (which would re-measure a smaller box and oscillate the size). An
-  // explicit mode is used as-is and may overflow (scroll) by design. Until
-  // the first measurement lands, fall back to the fill-width behaviour the
-  // stage always had.
-  const fitZoom = fitAvail
-    ? Math.min(fitAvail.w / canvasWidth, fitAvail.h / canvasHeight)
-    : null;
-  const zoom =
-    zoomMode === "fit" ? fitZoom ?? previewW / canvasWidth : zoomMode;
-  const stageW = Math.max(1, Math.floor(canvasWidth * zoom));
-  const stageH = Math.max(1, Math.floor(canvasHeight * zoom));
+  // Effective preview zoom. Fit is CSS-driven (.stage-fit-card): the
+  // browser contain-fits the card into the stage, so no JS measurement is
+  // involved and nothing can oscillate. The effective ratio for the zoom
+  // readout comes from the measured card width. An explicit zoom is used
+  // as-is and may overflow (scroll) by design.
+  const zoom = zoomMode === "fit" ? null : zoomMode;
+  const effectiveZoom = zoom ?? previewW / canvasWidth;
 
   // Z-index of each baked layer, derived from the bottom → top order array
   // (index 0 = backmost). Starts at 1 so the dedicated background layer
@@ -914,30 +852,43 @@ export function PreviewStage() {
           >
             <Magnet className="size-3" />
           </button>
-          <PreviewZoomControl
-            mode={zoomMode}
-            effective={zoom}
-            onChange={setZoomMode}
-          />
           <CanvasSizeButton />
         </div>
       </div>
 
-      {/* Stage area — the card keeps the canvas' exact aspect at any zoom.
-          On the desktop shell the area is a bounded flex box: Fit sizes the
-          card INTO it (auto margins centre a smaller card) and never
-          overflows, while an explicit zoom bigger than the area scrolls
-          inside it. Below lg the card grows in the normal page flow. */}
-      <div
-        ref={stageAreaRef}
-        className="flex w-full flex-col lg:min-h-[120px] lg:flex-1 lg:overflow-auto"
-      >
+      {/* Stage — a FIXED workspace that always fills the space the center
+          column grants it; its size never depends on the canvas ratio. The
+          canvas contain-fits inside with pure CSS (.stage-fit-card: aspect-
+          ratio + max-width/max-height through cq units), filling the height
+          in portrait and the width in landscape. The zoom pill lives in the
+          stage corner, above the scrollable canvas area so it never scrolls
+          away with an explicit zoom. */}
+      <div className="relative flex w-full flex-1 flex-col lg:min-h-[140px]">
+        {/* Neutral dotted backdrop — reads as workspace around the canvas. */}
+        <div
+          className="stage-dots pointer-events-none absolute inset-0 rounded-lg bg-muted/30"
+          aria-hidden
+        />
+        <div
+          className="relative z-10 flex min-h-[140px] flex-1 flex-col lg:min-h-0 lg:overflow-auto lg:[container-type:size]"
+        >
         <div
           className={cn(
             "relative z-10 mx-auto my-auto shrink-0 overflow-hidden rounded-lg border bg-muted/40 ring-1 ring-inset ring-black/[0.03]",
-            fontLoaded ? "shadow-sm" : ""
+            fontLoaded ? "shadow-sm" : "",
+            zoom === null && "stage-fit-card"
           )}
-          style={{ width: stageW, height: stageH }}
+          style={
+            zoom === null
+              ? ({
+                  "--canvas-ar": `${canvasWidth} / ${canvasHeight}`,
+                  "--canvas-r": String(canvasWidth / canvasHeight),
+                } as CSSProperties)
+              : {
+                  width: Math.max(1, Math.floor(canvasWidth * zoom)),
+                  height: Math.max(1, Math.floor(canvasHeight * zoom)),
+                }
+          }
         >
         <div
           className="absolute inset-0"
@@ -1211,6 +1162,18 @@ export function PreviewStage() {
 
         {/* Floating in-preview style editor */}
         {fontLoaded && toolbarVisible && <PreviewToolbar placeTop={placeTop} />}
+        </div>
+        </div>
+
+        {/* Stage-corner zoom control (Fit / presets / custom) — pinned to
+            the stage, not the canvas, so it never moves with the ratio and
+            never scrolls away with an explicit zoom. */}
+        <div className="absolute left-2 top-2 z-30">
+          <PreviewZoomControl
+            mode={zoomMode}
+            effective={effectiveZoom}
+            onChange={setZoomMode}
+          />
         </div>
       </div>
     </div>

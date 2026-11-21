@@ -1,6 +1,6 @@
 "use client";
 
-import { Clapperboard, Repeat } from "lucide-react";
+import { Clapperboard, Info, Repeat } from "lucide-react";
 import { useStudio } from "@/lib/studio-store";
 import type { LoopMode } from "@/lib/studio-store-types";
 import { EASING_OPTIONS } from "@/lib/easing";
@@ -18,6 +18,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const FPS_OPTIONS = [12, 15, 24, 30, 60];
 
@@ -45,6 +50,22 @@ export function AnimationPanel() {
         <CardTitle className="flex items-center gap-2 text-xs">
           <Clapperboard className="size-3.5 text-muted-foreground" />
           Animation
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="About animation settings"
+                className="ml-auto flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Info className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-60 text-balance">
+              Typography, colors, canvas size and the axis-slider overlay are
+              edited directly inside the preview — use the floating toolbar on
+              the canvas.
+            </TooltipContent>
+          </Tooltip>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 px-3 py-3">
@@ -131,7 +152,27 @@ export function AnimationPanel() {
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <Label className="text-[11px]">Repeat</Label>
+              <Label className="flex items-center gap-1 text-[11px]">
+                Repeat
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="button"
+                      aria-label="About Repeat"
+                      className="flex cursor-help items-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                    >
+                      <Info className="size-3" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-60 text-balance">
+                    Repeat tiles the animation cycle into the export: video
+                    length = Duration × Repeat (doubled again in Loop mode for
+                    a seamless ping-pong). GIF loops natively, so Repeat
+                    applies to it only in Once mode.
+                  </TooltipContent>
+                </Tooltip>
+              </Label>
               <span className="font-mono text-[11px] text-muted-foreground">
                 {reps}×
               </span>
@@ -155,19 +196,6 @@ export function AnimationPanel() {
             </div>
           </div>
         </div>
-
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Repeat tiles the animation cycle into the export: video length =
-          Duration × Repeat (doubled again in Loop mode for a seamless
-          ping-pong). GIF loops natively, so Repeat applies to it only in Once
-          mode.
-        </p>
-
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Typography, colors, canvas size and the axis-slider overlay are
-          edited directly inside the preview — use the floating toolbar at the
-          bottom of the canvas.
-        </p>
       </CardContent>
     </Card>
   );
